@@ -1,0 +1,16 @@
+{
+  "remote": {
+    "paths_by_profile": {
+      "default": [
+        "/opt/upload"
+      ]
+    },
+    "suffixes": ".sql,.txt",
+    "connection": {},
+    "paths": []
+  },
+  "local": {
+    "suffixes": ".sql,.txt",
+    "paths": []
+  }
+}

@@ -1,0 +1,2165 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>文件上传与脚本执行</title>
+    <style>
+      :root {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-soft: #f8fafc;
+        --ink: #172026;
+        --muted: #667085;
+        --line: #d8dee8;
+        --line-strong: #b9c3d2;
+        --accent: #0f766e;
+        --accent-strong: #115e59;
+        --blue: #1d4ed8;
+        --danger: #b42318;
+        --warning: #c2410c;
+        --success: #15803d;
+        --shadow: 0 12px 28px rgba(15, 23, 42, 0.07);
+        --radius: 8px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          linear-gradient(180deg, #eef3f8 0%, #f5f7fb 280px),
+          var(--bg);
+        font-family: "Noto Sans SC", "Source Han Sans SC", "PingFang SC", sans-serif;
+      }
+
+      .container {
+        width: min(980px, calc(100% - 32px));
+        margin: 24px auto 40px;
+      }
+
+      .page-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px;
+        align-items: end;
+        margin-bottom: 16px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 26px;
+        line-height: 1.2;
+      }
+
+      h3 {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.3;
+      }
+
+      .subtitle {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .header-status {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .grid,
+      .stack {
+        display: grid;
+        gap: 16px;
+        min-width: 0;
+        width: 100%;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+        gap: 16px;
+        align-items: stretch;
+        min-width: 0;
+        width: 100%;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 18px;
+        box-shadow: var(--shadow);
+        min-width: 0;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
+      }
+
+      .card:hover {
+        border-color: #c9d4e3;
+        box-shadow: 0 16px 34px rgba(15, 23, 42, 0.09);
+      }
+
+      .hero > .card {
+        min-height: 100%;
+      }
+
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .section-kicker {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .row,
+      .toolbar,
+      .script-actions,
+      .upload-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      .upload-panel {
+        display: grid;
+        gap: 14px;
+        align-content: start;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .summary-item {
+        min-height: 78px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface-soft);
+      }
+
+      .summary-item.full {
+        grid-column: 1 / -1;
+      }
+
+      .summary-label,
+      .field label,
+      .generator-stat-label,
+      .script-meta,
+      .log-meta,
+      .log-panel-meta,
+      .system-log-meta,
+      .hint {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .summary-value {
+        margin-top: 6px;
+        color: var(--ink);
+        font-size: 24px;
+        font-weight: 750;
+        line-height: 1.15;
+      }
+
+      .upload-pending-card {
+        position: relative;
+        border-color: #fed7aa;
+        background: linear-gradient(135deg, #fff7ed 0%, #fff 68%);
+      }
+
+      .upload-pending-card::after {
+        content: "待上传";
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #ffedd5;
+        color: #9a3412;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .pending-upload-count {
+        color: #c2410c;
+        text-shadow: 0 8px 18px rgba(194, 65, 12, 0.14);
+      }
+
+      .upload-pending-card.has-files {
+        border-color: #fb923c;
+        box-shadow: inset 4px 0 0 #f97316;
+      }
+
+      .upload-pending-card.has-files .pending-upload-count {
+        color: #ea580c;
+      }
+
+      .summary-value.path {
+        color: var(--accent-strong);
+        font-size: 14px;
+        font-weight: 650;
+        word-break: break-all;
+      }
+
+      .upload-actions input[type="file"] {
+        flex: 1 1 340px;
+        min-width: 260px;
+      }
+
+      .remote-browser {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--surface);
+      }
+
+      .remote-browser-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface-soft);
+      }
+
+      .remote-browser-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .remote-browser-title {
+        color: var(--ink);
+        font-weight: 800;
+      }
+
+      .remote-entry-list {
+        max-height: 230px;
+        overflow: auto;
+        display: grid;
+      }
+
+      .remote-entry {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        padding: 10px 12px;
+        border-bottom: 1px solid #edf1f6;
+      }
+
+      .remote-entry:last-child {
+        border-bottom: none;
+      }
+
+      .remote-entry-name {
+        color: var(--ink);
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+
+      .remote-entry-meta {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .remote-entry-type {
+        align-self: start;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #3730a3;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .remote-entry-type.file {
+        background: #ecfdf7;
+        color: var(--accent-strong);
+      }
+
+      .remote-entry-empty {
+        padding: 14px 12px;
+        color: var(--muted);
+      }
+
+      .field-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .field-wide {
+        grid-column: 1 / -1;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+
+      input[type="text"],
+      input[type="password"],
+      input[type="number"],
+      select {
+        width: 100%;
+        min-height: 40px;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #fff;
+        color: var(--ink);
+        font-size: 14px;
+        outline: none;
+      }
+
+      input:focus,
+      select:focus {
+        border-color: var(--blue);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+      }
+
+      input[type="file"] {
+        padding: 8px;
+        border: 1px dashed var(--line-strong);
+        border-radius: var(--radius);
+        background: var(--surface-soft);
+      }
+
+      button {
+        min-height: 40px;
+        border: 1px solid transparent;
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, #14877e 0%, var(--accent) 100%);
+        color: #fff;
+        padding: 9px 14px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 750;
+        box-shadow: 0 8px 18px rgba(15, 118, 110, 0.18);
+        transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 24px rgba(15, 118, 110, 0.22);
+      }
+
+      button:active {
+        transform: translateY(0);
+        box-shadow: 0 6px 14px rgba(15, 118, 110, 0.16);
+      }
+
+      button:focus-visible,
+      .button-link:focus-visible {
+        outline: 3px solid rgba(37, 99, 235, 0.18);
+        outline-offset: 2px;
+      }
+
+      button.secondary {
+        background: linear-gradient(180deg, #2563eb 0%, var(--blue) 100%);
+        box-shadow: 0 8px 18px rgba(37, 99, 235, 0.16);
+      }
+
+      .small-button {
+        min-height: 32px;
+        padding: 6px 10px;
+        font-size: 12px;
+        box-shadow: none;
+      }
+
+      .button-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 9px 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        color: var(--accent-strong);
+        font-size: 14px;
+        font-weight: 700;
+        text-decoration: none;
+        transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+      }
+
+      .button-link:hover {
+        transform: translateY(-1px);
+        border-color: #aac7c3;
+        box-shadow: 0 10px 20px rgba(15, 118, 110, 0.12);
+      }
+
+      .ghost {
+        border-color: #cbd5e1;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        color: var(--accent-strong);
+        box-shadow: none;
+      }
+
+      .ghost:hover {
+        border-color: #99bdb8;
+        background: #f0fdfa;
+        box-shadow: 0 8px 18px rgba(15, 118, 110, 0.1);
+      }
+
+      .danger {
+        background: linear-gradient(180deg, #dc2626 0%, var(--danger) 100%);
+        box-shadow: 0 8px 16px rgba(180, 35, 24, 0.16);
+      }
+
+      .danger:hover {
+        box-shadow: 0 12px 24px rgba(180, 35, 24, 0.22);
+      }
+
+      .password-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .badge,
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 32px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .badge {
+        background: #e6f4f1;
+        color: var(--accent-strong);
+      }
+
+      .status-badge {
+        background: #eef2f7;
+        color: var(--muted);
+      }
+
+      .status-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+
+      .status-ok {
+        background: #e8f7ee;
+        color: var(--success);
+      }
+
+      .status-fail {
+        background: #feeceb;
+        color: var(--danger);
+      }
+
+      .status-idle {
+        background: #eef2f7;
+        color: var(--muted);
+      }
+
+      .generator-card {
+        position: relative;
+        overflow: hidden;
+        border-color: #b7d5d1;
+        background:
+          linear-gradient(90deg, rgba(15, 118, 110, 0.08), rgba(37, 99, 235, 0.06)),
+          var(--surface);
+      }
+
+      .generator-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px;
+        align-items: start;
+      }
+
+      .generator-heading {
+        display: grid;
+        gap: 6px;
+      }
+
+      .generator-kicker {
+        color: var(--accent-strong);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .generator-title {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      .generator-desc {
+        max-width: 760px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .generator-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(140px, 1fr));
+        gap: 10px;
+      }
+
+      .generator-stat {
+        min-width: 150px;
+        padding: 12px;
+        border: 1px solid rgba(15, 118, 110, 0.18);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.78);
+      }
+
+      .generator-stat-value {
+        margin-top: 5px;
+        color: var(--accent-strong);
+        font-size: 20px;
+        font-weight: 800;
+      }
+
+      .generator-options {
+        margin-top: 16px;
+        padding: 12px;
+        border: 1px solid rgba(15, 118, 110, 0.16);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.74);
+      }
+
+      .option-section {
+        display: grid;
+        gap: 10px;
+      }
+
+      .option-section + .option-section {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px dashed var(--line-strong);
+      }
+
+      .option-section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .option-section-title {
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 800;
+      }
+
+      .option-section-desc {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .options-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .script-option {
+        position: relative;
+        display: block;
+        min-width: 0;
+      }
+
+      .script-option input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .script-option-body {
+        display: grid;
+        min-height: 76px;
+        gap: 5px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #fff;
+        cursor: pointer;
+        transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+      }
+
+      .script-option:hover .script-option-body {
+        border-color: var(--accent);
+        transform: translateY(-1px);
+      }
+
+      .script-option input:checked + .script-option-body {
+        border-color: var(--accent);
+        background: #ecfdf7;
+        box-shadow: inset 4px 0 0 var(--accent), 0 10px 22px rgba(15, 118, 110, 0.1);
+      }
+
+      .script-option.temporary .script-option-body {
+        border-color: #fed7aa;
+        background: #fff7ed;
+      }
+
+      .script-option.temporary input:checked + .script-option-body {
+        border-color: #f97316;
+        background: #ffedd5;
+        box-shadow: inset 4px 0 0 #f97316, 0 10px 22px rgba(249, 115, 22, 0.13);
+      }
+
+      .script-option-title {
+        color: var(--ink);
+        font-weight: 800;
+        overflow-wrap: anywhere;
+      }
+
+      .script-option-meta {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .generator-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 14px;
+      }
+
+      .primary-cta {
+        background: linear-gradient(135deg, #0f766e 0%, #115e59 100%);
+        box-shadow: 0 10px 24px rgba(17, 94, 89, 0.24);
+      }
+
+      .run-cta {
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(135deg, #111827 0%, #2563eb 48%, #0f766e 100%);
+        box-shadow: 0 14px 30px rgba(37, 99, 235, 0.28);
+        letter-spacing: 0.04em;
+      }
+
+      .run-cta span {
+        position: relative;
+        z-index: 1;
+      }
+
+      .run-cta::after {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 -45%;
+        width: 40%;
+        transform: skewX(-20deg);
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.36), transparent);
+        animation: runButtonShine 2.8s ease-in-out infinite;
+        pointer-events: none;
+      }
+
+      .run-cta:hover {
+        box-shadow: 0 18px 38px rgba(37, 99, 235, 0.34);
+      }
+
+      .generator-tip {
+        flex: 1 1 280px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status {
+        max-height: 180px;
+        overflow: auto;
+        margin-top: 10px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #0f172a;
+        color: #dbeafe;
+        font-family: "SF Mono", "Menlo", "Consolas", monospace;
+        font-size: 12px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+      }
+
+      .log-panel,
+      .script-panel,
+      .system-log-panel {
+        margin-top: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        overflow: hidden;
+      }
+
+      .log-panel-toolbar,
+      .script-toolbar,
+      .system-log-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface-soft);
+        flex-wrap: wrap;
+      }
+
+      .panel-body {
+        padding: 12px;
+      }
+
+      .log-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .log-item {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 10px;
+        background: #fff;
+      }
+
+      .log-title-row {
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 6px;
+        padding: 8px 10px;
+        border-left: 5px solid var(--accent);
+        border-radius: var(--radius);
+        background: #e6f4f1;
+      }
+
+      .log-title {
+        flex: 0 1 auto;
+        color: var(--accent-strong);
+        font-weight: 800;
+        overflow-wrap: anywhere;
+      }
+
+      .log-item.log-color-1 .log-title-row {
+        border-left-color: #0f766e;
+        background: #e6f4f1;
+      }
+
+      .log-item.log-color-1 .log-title {
+        color: #115e59;
+      }
+
+      .log-item.log-color-2 .log-title-row {
+        border-left-color: #2563eb;
+        background: #eff6ff;
+      }
+
+      .log-item.log-color-2 .log-title {
+        color: #1d4ed8;
+      }
+
+      .log-item.log-color-3 .log-title-row {
+        border-left-color: #b45309;
+        background: #fff7ed;
+      }
+
+      .log-item.log-color-3 .log-title {
+        color: #92400e;
+      }
+
+      .log-item.log-color-4 .log-title-row {
+        border-left-color: #7c3aed;
+        background: #f5f3ff;
+      }
+
+      .log-item.log-color-4 .log-title {
+        color: #6d28d9;
+      }
+
+      .log-item.log-color-5 .log-title-row {
+        border-left-color: #be123c;
+        background: #fff1f2;
+      }
+
+      .log-item.log-color-5 .log-title {
+        color: #9f1239;
+      }
+
+      .log-item.log-color-6 .log-title-row {
+        border-left-color: #0369a1;
+        background: #f0f9ff;
+      }
+
+      .log-item.log-color-6 .log-title {
+        color: #075985;
+      }
+
+      .log-result-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        min-width: 52px;
+        min-height: 24px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 850;
+        white-space: nowrap;
+      }
+
+      .log-result-badge.success {
+        background: #dcfce7;
+        color: #166534;
+      }
+
+      .log-result-badge.failure {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+
+      .log-content {
+        max-height: 220px;
+        overflow: auto;
+        white-space: pre-wrap;
+        color: #27313b;
+        background: #f8fafc;
+        border: 1px solid #e7edf5;
+        border-radius: var(--radius);
+        padding: 10px;
+        font-family: "SF Mono", "Menlo", "Consolas", monospace;
+        font-size: 12px;
+        line-height: 1.65;
+      }
+
+      .script-toolbar-title {
+        display: grid;
+        gap: 4px;
+      }
+
+      .script-name {
+        color: var(--accent-strong);
+        font-weight: 800;
+      }
+
+      .script-content {
+        display: none;
+        padding: 12px;
+      }
+
+      .script-content.show {
+        display: block;
+      }
+
+      .script-empty {
+        color: var(--muted);
+        padding: 14px 12px;
+      }
+
+      .code-block {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: #dbeafe;
+        background: #0f172a;
+        border-radius: var(--radius);
+        padding: 12px;
+        font-family: "SF Mono", "Menlo", "Consolas", monospace;
+        font-size: 12px;
+        line-height: 1.7;
+      }
+
+      .segmented {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: #fff;
+      }
+
+      .segmented button {
+        min-height: 36px;
+        border-radius: 0;
+        box-shadow: none;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .segmented button.active {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .scroll-log {
+        max-height: 380px;
+        overflow: auto;
+        border-radius: var(--radius);
+      }
+
+      .scroll-log::-webkit-scrollbar,
+      .log-content::-webkit-scrollbar,
+      .status::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+
+      .scroll-log::-webkit-scrollbar-thumb,
+      .log-content::-webkit-scrollbar-thumb,
+      .status::-webkit-scrollbar-thumb {
+        background: rgba(100, 116, 139, 0.45);
+        border-radius: 999px;
+      }
+
+      .scroll-log::-webkit-scrollbar-track,
+      .log-content::-webkit-scrollbar-track,
+      .status::-webkit-scrollbar-track {
+        background: rgba(148, 163, 184, 0.15);
+      }
+
+      .hidden-panel {
+        display: none;
+      }
+
+      .dialog-mask {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: none;
+        place-items: center;
+        padding: 20px;
+        background: rgba(15, 23, 42, 0.48);
+      }
+
+      .dialog-mask.show {
+        display: grid;
+      }
+
+      .dialog {
+        width: min(520px, 100%);
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        box-shadow: 0 26px 70px rgba(15, 23, 42, 0.24);
+        overflow: hidden;
+      }
+
+      .dialog-title {
+        margin: 0;
+        padding: 16px 18px 8px;
+        font-size: 20px;
+      }
+
+      .dialog-body {
+        max-height: 340px;
+        overflow: auto;
+        padding: 0 18px 16px;
+        color: var(--muted);
+        line-height: 1.65;
+        white-space: pre-wrap;
+      }
+
+      .dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 14px 18px;
+        border-top: 1px solid var(--line);
+        background: var(--surface-soft);
+        flex-wrap: wrap;
+      }
+
+      .dialog.success .dialog-title {
+        color: var(--success);
+      }
+
+      .dialog.error .dialog-title {
+        color: var(--danger);
+      }
+
+      .dialog.warning .dialog-title {
+        color: var(--warning);
+      }
+
+      @keyframes runButtonShine {
+        0% {
+          left: -45%;
+        }
+        55%,
+        100% {
+          left: 120%;
+        }
+      }
+
+      @media (max-width: 980px) {
+        .page-header,
+        .hero,
+        .generator-header {
+          grid-template-columns: 1fr;
+        }
+
+        .header-status {
+          justify-content: flex-start;
+        }
+
+        .options-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 720px) {
+        .container {
+          width: min(100% - 20px, 980px);
+          margin-top: 16px;
+        }
+
+        .field-grid,
+        .summary-grid,
+        .options-grid,
+        .generator-stats {
+          grid-template-columns: 1fr;
+        }
+
+        .field-wide,
+        .summary-item.full {
+          grid-column: auto;
+        }
+
+        .upload-actions,
+        .toolbar,
+        .script-actions,
+        .generator-actions {
+          align-items: stretch;
+        }
+
+        .upload-actions button,
+        .toolbar button,
+        .generator-actions button,
+        .script-actions button {
+          width: 100%;
+        }
+
+        .password-row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="page-header">
+        <div>
+          <h1>SQL 发布执行台</h1>
+          <div class="subtitle">上传 SQL 文件、生成执行脚本、查看远程日志</div>
+        </div>
+        <div class="header-status">
+          <a class="button-link" href="/md5">MD5 文件清单</a>
+          <span id="activeProfileBadge" class="badge">当前环境: -</span>
+          <span id="connectionStatusBadge" class="status-badge status-idle">
+            <span class="status-dot"></span>
+            <span id="connectionStatusText">未检测</span>
+          </span>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="hero">
+          <div class="card upload-panel">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker">UPLOAD</div>
+                <h3>上传目录</h3>
+              </div>
+            </div>
+            <div class="hint">上传目录内的全部文件，远程同名文件会被覆盖。</div>
+            <div class="hint" id="defaultLocalDirHint">默认本地目录：未配置。</div>
+            <div class="summary-grid">
+              <div class="summary-item full">
+                <div class="summary-label">当前远程目录</div>
+                <div id="remoteDirSummary" class="summary-value path">-</div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-label">远程已存在文件数</div>
+                <div id="remoteFileCount" class="summary-value">-</div>
+              </div>
+              <div id="uploadPendingCard" class="summary-item upload-pending-card">
+                <div class="summary-label">当前选择文件数（待上传）</div>
+                <div id="selectedFileCount" class="summary-value pending-upload-count">0</div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-label">上次成功上传数</div>
+                <div id="lastUploadedCount" class="summary-value">0</div>
+              </div>
+            </div>
+            <div class="upload-actions">
+              <input id="file" type="file" webkitdirectory directory multiple />
+              <button id="uploadBtn">上传目录到服务器</button>
+              <button class="danger" id="clearDirBtn">清除目录</button>
+            </div>
+            <div class="remote-browser">
+              <div class="remote-browser-header">
+                <div class="remote-browser-title">远程目录内容</div>
+                <div class="remote-browser-actions">
+                  <div class="log-panel-meta" id="remoteEntryCount">-</div>
+                  <button class="ghost small-button" id="refreshRemoteSummaryBtn" type="button">刷新目录</button>
+                </div>
+              </div>
+              <div id="remoteEntryList" class="remote-entry-list">
+                <div class="remote-entry-empty">正在读取远程目录...</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card stack">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker">ENVIRONMENT</div>
+                <h3>环境配置</h3>
+              </div>
+            </div>
+            <div class="field">
+              <label for="profileSelect">选择配置文件</label>
+              <div class="toolbar">
+                <select id="profileSelect"></select>
+                <button class="secondary" id="useProfileBtn">切换当前环境</button>
+                <button id="deleteProfileBtn">删除配置</button>
+                <button class="ghost" id="testConnectionBtn" type="button">测试连接</button>
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="profileName">配置名称</label>
+                <input id="profileName" type="text" placeholder="例如 T2 / Sit1 / zsc" />
+              </div>
+              <div class="field">
+                <label for="sshHost">SSH_HOST</label>
+                <input id="sshHost" type="text" placeholder="20.240.39.56" />
+              </div>
+              <div class="field">
+                <label for="sshPort">SSH_PORT</label>
+                <input id="sshPort" type="number" value="22" />
+              </div>
+              <div class="field">
+                <label for="sshUser">SSH_USER</label>
+                <input id="sshUser" type="text" placeholder="admin" />
+              </div>
+              <div class="field">
+                <label for="sshPassword">SSH_PASSWORD</label>
+                <div class="password-row">
+                  <input id="sshPassword" type="password" placeholder="密码" />
+                  <button type="button" class="ghost" id="togglePasswordBtn">显示密码</button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="remoteDir">REMOTE_DIR</label>
+                <input id="remoteDir" type="text" placeholder="/opt/upload" />
+              </div>
+              <div class="field">
+                <label for="scriptName">脚本名称</label>
+                <input id="scriptName" type="text" value="224.sh" />
+              </div>
+              <div class="field field-wide">
+                <label for="defaultLocalDir">默认本地目录（操作提示）</label>
+                <input id="defaultLocalDir" type="text" placeholder="例如 /path/to/sql_package" />
+              </div>
+            </div>
+            <div class="row">
+              <button id="saveProfileBtn">保存配置</button>
+            </div>
+            <div class="hint">页面所有操作都使用顶部显示的当前环境。</div>
+          </div>
+        </div>
+
+        <!-- 生成脚本卡片 -->
+        <div class="card generator-card">
+          <div class="generator-header">
+            <div class="generator-heading">
+              <div class="generator-kicker">SCRIPT BUILDER</div>
+              <h3 class="generator-title">生成脚本</h3>
+              <div class="generator-desc">选择本次要执行的 SQL，系统会按固定顺序生成远程脚本。</div>
+            </div>
+            <div class="generator-stats">
+              <div class="generator-stat">
+                <div class="generator-stat-label">已选脚本块</div>
+                <div class="generator-stat-value" id="selectedOptionCount">0</div>
+              </div>
+              <div class="generator-stat">
+                <div class="generator-stat-label">脚本最新修改时间</div>
+                <div class="generator-stat-value" id="scriptUpdatedText">-</div>
+              </div>
+            </div>
+          </div>
+          <div class="generator-options">
+            <div class="option-section">
+              <div class="option-section-header">
+                <div>
+                  <div class="option-section-title">临时 SQL（本次重点执行）</div>
+                  <div class="option-section-desc">新增的 _tmp.sql 文件，建议本次执行优先从这里选择。</div>
+                </div>
+                <span class="badge">TEMP SQL</span>
+              </div>
+              <div class="options-grid">
+                <label class="script-option temporary">
+                  <input type="checkbox" name="opt" value="batchetl1_tmp" data-group="tmp" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">db_pbatchetl001db_1_tmp.sql</span>
+                    <span class="script-option-meta">临时批量 ETL SQL 1，日志 batchetl01_tmp_execute_sql.txt</span>
+                  </span>
+                </label>
+                <label class="script-option temporary">
+                  <input type="checkbox" name="opt" value="batchetl2_tmp" data-group="tmp" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">db_pbatchetl001db_2_tmp.sql</span>
+                    <span class="script-option-meta">临时批量 ETL SQL 2，日志 batchetl02_tmp_execute_sql.txt</span>
+                  </span>
+                </label>
+                <label class="script-option temporary">
+                  <input type="checkbox" name="opt" value="data1_tmp" data-group="tmp" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">db_pdata001db_1_tmp.sql</span>
+                    <span class="script-option-meta">临时 data SQL 1，日志 data01_tmp_execute_sql.txt</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div class="option-section">
+              <div class="option-section-header">
+                <div>
+                  <div class="option-section-title">常规 SQL</div>
+                  <div class="option-section-desc">原有正式脚本块，按固定执行顺序写入 224.sh。</div>
+                </div>
+                <span class="badge">NORMAL SQL</span>
+              </div>
+              <div class="options-grid">
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="batchetl1" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">db_pbatchetl001db_1.sql</span>
+                    <span class="script-option-meta">批量 ETL SQL 1，独立日志 batchetl01_execute_sql.txt</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="batchetl2" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">db_pbatchetl001db_2.sql</span>
+                    <span class="script-option-meta">批量 ETL SQL 2，独立日志 batchetl02_execute_sql.txt</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="batchetl3" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">db_pbatchetl001db_3.sql</span>
+                    <span class="script-option-meta">批量 ETL SQL 3，独立日志 batchetl03_execute_sql.txt</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="batchetl4" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">db_pbatchetl001db_4.sql</span>
+                    <span class="script-option-meta">批量 ETL SQL 4，独立日志 batchetl04_execute_sql.txt</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="data" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">pdata001db</span>
+                    <span class="script-option-meta">数据初始化脚本块，日志 data_execute_sql.txt</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="other" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">pother001db</span>
+                    <span class="script-option-meta">其他通用脚本块</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="pub" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">ppub001db</span>
+                    <span class="script-option-meta">发布相关脚本块</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="history" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">phistory001db</span>
+                    <span class="script-option-meta">历史库脚本块</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="grant" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">pgrant001db</span>
+                    <span class="script-option-meta">授权相关脚本块</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="install01" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">pinstall001db</span>
+                    <span class="script-option-meta">安装脚本块 01</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="install02" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">pinstall002db</span>
+                    <span class="script-option-meta">安装脚本块 02</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="mainnf" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">pmainnf001db</span>
+                    <span class="script-option-meta">主业务脚本块</span>
+                  </span>
+                </label>
+                <label class="script-option">
+                  <input type="checkbox" name="opt" value="test" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">测试选项</span>
+                    <span class="script-option-meta">生成测试日志文件</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="generator-actions">
+            <button class="primary-cta" id="genBtn" type="button">生成 SQL 脚本</button>
+            <button class="run-cta" id="runBtn" type="button"><span>执行脚本</span></button>
+            <button class="secondary" id="selectTmpOptsBtn" type="button">一键选择临时 SQL</button>
+            <button class="ghost" id="clearSelectedOptsBtn" type="button">一键清空已选</button>
+            <div class="generator-tip">生成后会自动展开脚本预览；执行前建议确认脚本内容。</div>
+          </div>
+          <div class="script-panel">
+            <div class="script-toolbar">
+              <div class="script-toolbar-title">
+                <div class="script-name" id="scriptNameLabel">224.sh</div>
+                <div class="script-meta" id="scriptMetaLabel">当前还没有可预览的脚本</div>
+              </div>
+              <div class="script-actions">
+                <button class="ghost" id="toggleScriptBtn" type="button">显示脚本内容</button>
+                <button class="secondary" id="refreshScriptBtn" type="button">刷新脚本</button>
+              </div>
+            </div>
+            <div id="scriptEmptyState" class="script-empty">生成脚本后，这里会展示当前 SQL 脚本内容。</div>
+            <div id="scriptContentWrap" class="script-content">
+              <pre id="scriptContent" class="code-block"></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输出卡片 -->
+        <div class="card">
+          <div class="section-header">
+            <div>
+              <div class="section-kicker">RESULT</div>
+              <h3>操作输出</h3>
+            </div>
+          </div>
+          <div id="status" class="status">等待操作...</div>
+        </div>
+
+        <!-- 日志卡片 -->
+        <div class="card">
+          <div class="section-header">
+            <div>
+              <div class="section-kicker">REMOTE LOGS</div>
+              <h3>日志内容</h3>
+            </div>
+            <div class="log-panel-meta" id="runtimeLogMeta">当前日志：log</div>
+          </div>
+          <div class="log-panel">
+            <div class="log-panel-toolbar">
+              <div class="segmented">
+                <button class="active" id="currentLogTabBtn" type="button">当前日志</button>
+                <button id="historyLogTabBtn" type="button">历史备份</button>
+              </div>
+              <div class="script-actions">
+                <button class="ghost" id="toggleRuntimeLogsBtn" type="button">隐藏日志内容</button>
+                <button class="secondary" id="refreshLogsBtn">刷新日志</button>
+              </div>
+            </div>
+            <div id="runtimeLogsBody" class="panel-body">
+              <div class="scroll-log">
+                <div id="logList" class="log-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-header">
+            <div>
+              <div class="section-kicker">SYSTEM</div>
+              <h3>系统日志</h3>
+            </div>
+            <div class="system-log-meta" id="systemLogMeta">日志目录: -</div>
+          </div>
+          <div class="system-log-panel">
+            <div class="system-log-toolbar">
+              <div class="segmented">
+                <button class="active" id="appLogTabBtn" type="button">系统日志</button>
+                <button id="opsLogTabBtn" type="button">操作日志</button>
+              </div>
+              <div class="script-actions">
+                <button class="ghost" id="toggleSystemLogsBtn" type="button">隐藏日志</button>
+                <button class="secondary" id="refreshSystemLogsBtn" type="button">刷新系统日志</button>
+              </div>
+            </div>
+            <div id="systemLogBody" class="panel-body">
+              <div class="scroll-log">
+                <pre id="systemLogContent" class="code-block">加载中...</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="resultDialogMask" class="dialog-mask">
+      <div id="resultDialog" class="dialog">
+        <h3 id="resultDialogTitle" class="dialog-title">操作结果</h3>
+        <div id="resultDialogBody" class="dialog-body"></div>
+        <div class="dialog-actions">
+          <button id="closeResultDialogBtn">知道了</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="confirmDialogMask" class="dialog-mask">
+      <div id="confirmDialog" class="dialog warning">
+        <h3 id="confirmDialogTitle" class="dialog-title">确认操作</h3>
+        <div id="confirmDialogBody" class="dialog-body"></div>
+        <div class="dialog-actions">
+          <button class="ghost" id="cancelConfirmDialogBtn" type="button">取消</button>
+          <button class="danger" id="confirmDialogBtn" type="button">确认清除</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // 状态显示区域（类似 Java 前端里一个 <div> 的 setText）
+      const statusEl = document.getElementById("status");
+      const dialogMask = document.getElementById("resultDialogMask");
+      const resultDialog = document.getElementById("resultDialog");
+      const dialogTitle = document.getElementById("resultDialogTitle");
+      const dialogBody = document.getElementById("resultDialogBody");
+      const confirmDialogMask = document.getElementById("confirmDialogMask");
+      const confirmDialog = document.getElementById("confirmDialog");
+      const confirmDialogTitle = document.getElementById("confirmDialogTitle");
+      const confirmDialogBody = document.getElementById("confirmDialogBody");
+      const scriptContentWrap = document.getElementById("scriptContentWrap");
+      const scriptContent = document.getElementById("scriptContent");
+      const scriptEmptyState = document.getElementById("scriptEmptyState");
+      const scriptNameLabel = document.getElementById("scriptNameLabel");
+      const scriptMetaLabel = document.getElementById("scriptMetaLabel");
+      const scriptUpdatedText = document.getElementById("scriptUpdatedText");
+      const selectedOptionCount = document.getElementById("selectedOptionCount");
+      const toggleScriptBtn = document.getElementById("toggleScriptBtn");
+      const connectionStatusBadge = document.getElementById("connectionStatusBadge");
+      const connectionStatusText = document.getElementById("connectionStatusText");
+      const activeProfileBadge = document.getElementById("activeProfileBadge");
+      const remoteDirSummary = document.getElementById("remoteDirSummary");
+      const remoteFileCount = document.getElementById("remoteFileCount");
+      const remoteEntryCount = document.getElementById("remoteEntryCount");
+      const remoteEntryList = document.getElementById("remoteEntryList");
+      const refreshRemoteSummaryBtn = document.getElementById("refreshRemoteSummaryBtn");
+      const uploadPendingCard = document.getElementById("uploadPendingCard");
+      const selectedFileCount = document.getElementById("selectedFileCount");
+      const lastUploadedCount = document.getElementById("lastUploadedCount");
+      const defaultLocalDirHint = document.getElementById("defaultLocalDirHint");
+      const runtimeLogsBody = document.getElementById("runtimeLogsBody");
+      const toggleRuntimeLogsBtn = document.getElementById("toggleRuntimeLogsBtn");
+      const runtimeLogMeta = document.getElementById("runtimeLogMeta");
+      const currentLogTabBtn = document.getElementById("currentLogTabBtn");
+      const historyLogTabBtn = document.getElementById("historyLogTabBtn");
+      const systemLogContent = document.getElementById("systemLogContent");
+      const systemLogMeta = document.getElementById("systemLogMeta");
+      const systemLogBody = document.getElementById("systemLogBody");
+      const toggleSystemLogsBtn = document.getElementById("toggleSystemLogsBtn");
+      const appLogTabBtn = document.getElementById("appLogTabBtn");
+      const opsLogTabBtn = document.getElementById("opsLogTabBtn");
+      const fileInput = document.getElementById("file");
+      let profileState = { active: "", profiles: [] };
+      let scriptVisible = false;
+      let runtimeLogsVisible = true;
+      let activeRuntimeLogScope = "current";
+      let pendingConfirmAction = null;
+      let activeSystemLogName = "app.log";
+      let systemLogsVisible = true;
+
+      // 更新状态文本
+      function setStatus(msg) {
+        statusEl.textContent = msg;
+      }
+
+      function showDialog(title, message) {
+        resultDialog.classList.remove("success", "error", "warning");
+        if (title.includes("成功") || title.includes("完成")) {
+          resultDialog.classList.add("success");
+        } else if (title.includes("失败") || title.includes("异常")) {
+          resultDialog.classList.add("error");
+        } else {
+          resultDialog.classList.add("warning");
+        }
+        dialogTitle.textContent = title;
+        dialogBody.textContent = message || "";
+        dialogMask.classList.add("show");
+      }
+
+      function closeDialog() {
+        dialogMask.classList.remove("show");
+      }
+
+      function showConfirmDialog(title, message, onConfirm) {
+        confirmDialog.classList.add("warning");
+        confirmDialogTitle.textContent = title;
+        confirmDialogBody.textContent = message || "";
+        pendingConfirmAction = onConfirm;
+        confirmDialogMask.classList.add("show");
+      }
+
+      function closeConfirmDialog() {
+        confirmDialogMask.classList.remove("show");
+        pendingConfirmAction = null;
+      }
+
+      function setConnectionStatus(status, text) {
+        connectionStatusBadge.classList.remove("status-idle", "status-ok", "status-fail");
+        if (status === "ok") {
+          connectionStatusBadge.classList.add("status-ok");
+        } else if (status === "fail") {
+          connectionStatusBadge.classList.add("status-fail");
+        } else {
+          connectionStatusBadge.classList.add("status-idle");
+        }
+        connectionStatusText.textContent = text;
+      }
+
+      function setScriptVisible(visible) {
+        scriptVisible = visible;
+        scriptContentWrap.classList.toggle("show", visible);
+        toggleScriptBtn.textContent = visible ? "隐藏脚本内容" : "显示脚本内容";
+      }
+
+      function setRuntimeLogsVisible(visible) {
+        runtimeLogsVisible = visible;
+        runtimeLogsBody.classList.toggle("hidden-panel", !visible);
+        toggleRuntimeLogsBtn.textContent = visible ? "隐藏日志内容" : "显示日志内容";
+      }
+
+      function setRuntimeLogTab(scope) {
+        activeRuntimeLogScope = scope === "history" ? "history" : "current";
+        currentLogTabBtn.classList.toggle("active", activeRuntimeLogScope === "current");
+        historyLogTabBtn.classList.toggle("active", activeRuntimeLogScope === "history");
+      }
+
+      function updateSelectedOptionCount() {
+        const checked = document.querySelectorAll("input[name='opt']:checked").length;
+        selectedOptionCount.textContent = String(checked);
+      }
+
+      function updateSelectedFileCount(count) {
+        const fileCount = Number(count || 0);
+        selectedFileCount.textContent = String(fileCount);
+        uploadPendingCard.classList.toggle("has-files", fileCount > 0);
+      }
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function getLastLogLine(content) {
+        // 日志可能以空行结尾，所以这里取最后一行“非空内容”。
+        const lines = String(content || "")
+          .split(/\r?\n/)
+          .map(line => line.trim())
+          .filter(Boolean);
+        return lines.length ? lines[lines.length - 1] : "";
+      }
+
+      function getLogResult(content) {
+        const lastLine = getLastLogLine(content);
+        const normalized = lastLine.toUpperCase();
+        // 运维判断规则：最后一行等于 COMMENT，并且不是 ROLLBACK，才算成功。
+        const ok = normalized === "COMMENT" && normalized !== "ROLLBACK";
+        return {
+          ok,
+          lastLine,
+          label: ok ? "成功" : "失败",
+          className: ok ? "success" : "failure"
+        };
+      }
+
+      function getLogColorClass(index) {
+        return `log-color-${(index % 6) + 1}`;
+      }
+
+      function formatBytes(size) {
+        const value = Number(size || 0);
+        if (value < 1024) {
+          return `${value} B`;
+        }
+        if (value < 1024 * 1024) {
+          return `${(value / 1024).toFixed(1)} KB`;
+        }
+        return `${(value / 1024 / 1024).toFixed(1)} MB`;
+      }
+
+      function renderRemoteEntries(entries) {
+        const items = entries || [];
+        remoteEntryCount.textContent = `${items.length} 个顶层条目`;
+        if (!items.length) {
+          remoteEntryList.innerHTML = "<div class='remote-entry-empty'>远程目录为空</div>";
+          return;
+        }
+
+        remoteEntryList.innerHTML = items.map(item => {
+          const typeText = item.type === "dir" ? "目录" : "文件";
+          const sizeText = item.type === "dir" ? "目录" : formatBytes(item.size);
+          const protectedText = item.protected ? " / 保留" : "";
+          const typeClass = item.type === "dir" ? "dir" : "file";
+          return `
+            <div class="remote-entry">
+              <div>
+                <div class="remote-entry-name">${escapeHtml(item.name)}</div>
+                <div class="remote-entry-meta">${sizeText}${protectedText} / ${escapeHtml(item.modified_at || "-")}</div>
+              </div>
+              <div class="remote-entry-type ${typeClass}">${typeText}</div>
+            </div>
+          `;
+        }).join("");
+      }
+
+      async function parseActionResponse(res, successTitle, failureTitle) {
+        const responseCopy = res.clone();
+        let data = {};
+        try {
+          data = await res.json();
+        } catch (error) {
+          let rawText = "";
+          try {
+            rawText = await responseCopy.text();
+          } catch (cloneError) {
+            rawText = "";
+          }
+          data = {
+            ok: false,
+            message: rawText || "接口没有返回可识别的 JSON 结果"
+          };
+        }
+        const ok = res.ok && data.ok !== false;
+        const message = data.message || JSON.stringify(data);
+        const extra = [];
+        if (data.command) {
+          extra.push(`执行命令: ${data.command}`);
+        }
+        if (typeof data.exit_status !== "undefined") {
+          extra.push(`退出码: ${data.exit_status}`);
+        }
+        if (data.output) {
+          extra.push(`输出:\n${data.output}`);
+        }
+        const fullMessage = [message].concat(extra).join("\n\n");
+        setStatus(fullMessage);
+        showDialog(ok ? successTitle : failureTitle, fullMessage);
+        return { ok, data };
+      }
+
+      function profileFormData() {
+        return {
+          name: document.getElementById("profileName").value.trim(),
+          ssh_host: document.getElementById("sshHost").value.trim(),
+          ssh_port: Number(document.getElementById("sshPort").value || 22),
+          ssh_user: document.getElementById("sshUser").value.trim(),
+          ssh_password: document.getElementById("sshPassword").value,
+          remote_dir: document.getElementById("remoteDir").value.trim(),
+          script_name: document.getElementById("scriptName").value.trim() || "224.sh",
+          default_local_dir: document.getElementById("defaultLocalDir").value.trim()
+        };
+      }
+
+      function renderDefaultLocalDirHint(pathValue) {
+        const targetPath = (pathValue || "").trim();
+        if (targetPath) {
+          defaultLocalDirHint.textContent = `默认本地目录：${targetPath}`;
+          return;
+        }
+        defaultLocalDirHint.textContent = "默认本地目录：未配置";
+      }
+
+      function fillProfileForm(profile) {
+        if (!profile) {
+          return;
+        }
+        document.getElementById("profileName").value = profile.name || "";
+        document.getElementById("sshHost").value = profile.ssh_host || "";
+        document.getElementById("sshPort").value = profile.ssh_port || 22;
+        document.getElementById("sshUser").value = profile.ssh_user || "";
+        document.getElementById("sshPassword").value = profile.ssh_password || "";
+        document.getElementById("remoteDir").value = profile.remote_dir || "";
+        document.getElementById("scriptName").value = profile.script_name || "224.sh";
+        document.getElementById("defaultLocalDir").value = profile.default_local_dir || "";
+        renderDefaultLocalDirHint(profile.default_local_dir || "");
+      }
+
+      function renderProfileOptions() {
+        const select = document.getElementById("profileSelect");
+        select.innerHTML = "";
+        profileState.profiles.forEach(profile => {
+          const option = document.createElement("option");
+          option.value = profile.name;
+          option.textContent = profile.name;
+          if (profile.name === profileState.active) {
+            option.selected = true;
+          }
+          select.appendChild(option);
+        });
+        activeProfileBadge.textContent = `当前环境: ${profileState.active || "-"}`;
+      }
+
+      async function loadProfiles(selectedName) {
+        const res = await fetch("/config-profiles");
+        const data = await res.json();
+        profileState = {
+          active: data.active || "",
+          profiles: data.profiles || []
+        };
+        renderProfileOptions();
+        const targetName = selectedName || profileState.active;
+        const profile = profileState.profiles.find(item => item.name === targetName) || profileState.profiles[0];
+        fillProfileForm(profile);
+      }
+
+      async function loadScriptPreview() {
+        const res = await fetch("/script-preview");
+        const data = await res.json();
+        if (!res.ok || data.ok === false) {
+          scriptNameLabel.textContent = "脚本预览不可用";
+          scriptMetaLabel.textContent = data.message || "读取脚本失败";
+          scriptUpdatedText.textContent = "-";
+          scriptEmptyState.style.display = "block";
+          scriptEmptyState.textContent = data.message || "读取脚本失败";
+          scriptContent.textContent = "";
+          setScriptVisible(false);
+          return;
+        }
+
+        const scriptName = data.script_name || "224.sh";
+        scriptNameLabel.textContent = scriptName;
+
+        if (!data.exists) {
+          scriptMetaLabel.textContent = "当前还没有生成脚本";
+          scriptUpdatedText.textContent = "-";
+          scriptEmptyState.style.display = "block";
+          scriptEmptyState.textContent = "当前环境还没有生成脚本，请先点击“生成 SQL 脚本”。";
+          scriptContent.textContent = "";
+          setScriptVisible(false);
+          return;
+        }
+
+        scriptMetaLabel.textContent = `最新修改时间: ${data.modified_at || "-"}`;
+        scriptUpdatedText.textContent = data.modified_at || "-";
+        scriptEmptyState.style.display = "none";
+        scriptContent.textContent = data.content || "";
+      }
+
+      async function loadRemoteSummary() {
+        const res = await fetch("/remote-summary");
+        const data = await res.json();
+        if (!res.ok || data.ok === false) {
+          remoteDirSummary.textContent = data.message || "读取失败";
+          remoteFileCount.textContent = "-";
+          remoteEntryCount.textContent = "-";
+          remoteEntryList.innerHTML = `<div class='remote-entry-empty'>${escapeHtml(data.message || "读取远程目录失败")}</div>`;
+          return;
+        }
+        remoteDirSummary.textContent = data.remote_dir || "-";
+        remoteFileCount.textContent = String(data.total_files || 0);
+        renderRemoteEntries(data.entries || []);
+      }
+
+      function setSystemLogTab(logName) {
+        activeSystemLogName = logName;
+        appLogTabBtn.classList.toggle("active", logName === "app.log");
+        opsLogTabBtn.classList.toggle("active", logName === "operations.log");
+      }
+
+      function setSystemLogsVisible(visible) {
+        systemLogsVisible = visible;
+        systemLogBody.classList.toggle("hidden-panel", !visible);
+        toggleSystemLogsBtn.textContent = visible ? "隐藏日志" : "显示日志";
+      }
+
+      async function loadSystemLogs(logName) {
+        const targetLogName = logName || activeSystemLogName;
+        setSystemLogTab(targetLogName);
+        const res = await fetch(`/system-logs?log_name=${encodeURIComponent(targetLogName)}&lines=120`);
+        const data = await res.json();
+        if (!res.ok || data.ok === false) {
+          systemLogContent.textContent = data.message || "读取系统日志失败";
+          return;
+        }
+        systemLogMeta.textContent = `日志目录: ${data.log_dir || "-"} / 当前文件: ${data.log_name || "-"}`;
+        systemLogContent.textContent = data.exists ? (data.content || "日志文件为空") : "日志文件还没有生成";
+      }
+
+      async function testCurrentConnection(showResultDialog) {
+        setConnectionStatus("idle", "检测中...");
+        const res = await fetch("/connection-test", { method: "POST" });
+        const data = await res.json();
+        const ok = res.ok && data.ok !== false && data.connected === true;
+        if (ok) {
+          setConnectionStatus("ok", "连接正常");
+          if (showResultDialog) {
+            showDialog("连接成功", data.message || "当前环境连接正常");
+          }
+          return;
+        }
+
+        setConnectionStatus("fail", "连接失败");
+        if (showResultDialog) {
+          showDialog("连接失败", data.message || "当前环境无法连接到远程服务器");
+        }
+      }
+
+      // 上传按钮点击事件
+      document.getElementById("uploadBtn").addEventListener("click", async () => {
+        try {
+          if (!fileInput.files.length) {
+            showDialog("上传失败", "还没有选择本地目录。请先选择本地目录，再上传到当前远程环境。");
+            return;
+          }
+          setStatus(`准备上传目录，待上传文件数：${fileInput.files.length}`);
+          const form = new FormData();
+          // 目录上传时，会包含多个文件；浏览器会把相对路径放在 webkitRelativePath 中。
+          for (const f of fileInput.files) {
+            form.append("files", f, f.webkitRelativePath || f.name);
+          }
+          const res = await fetch("/upload", { method: "POST", body: form });
+          const result = await parseActionResponse(res, "上传成功", "上传失败");
+          if (result.ok) {
+            lastUploadedCount.textContent = String((result.data || {}).uploaded_files || 0);
+            await loadRemoteSummary();
+          }
+        } catch (error) {
+          console.error("上传目录请求异常", error);
+          const message = error && error.message ? error.message : "前端请求异常，请查看浏览器控制台或后台日志";
+          setStatus(`上传目录失败：${message}`);
+          showDialog("上传失败", `上传目录时发生异常：\n${message}`);
+        }
+      });
+
+      document.getElementById("clearDirBtn").addEventListener("click", async () => {
+        const currentPath = remoteDirSummary.textContent || document.getElementById("remoteDir").value || "-";
+        const currentEnv = activeProfileBadge.textContent || "当前环境: -";
+        showConfirmDialog(
+          "确认清除目录",
+          `${currentEnv}\n\n即将清除远程目录：\n${currentPath}\n\n会删除该路径下除 log 目录外的全部文件和子目录。\nlog 目录、当前日志、历史备份日志会保留。\n\n这是危险操作，请确认当前环境和路径完全正确后再继续。`,
+          async () => {
+            try {
+              setStatus(`准备清除远程目录：${currentPath}`);
+              const res = await fetch("/clear-dir", { method: "POST" });
+              const result = await parseActionResponse(res, "清除成功", "清除失败");
+              if (result.ok) {
+                lastUploadedCount.textContent = "0";
+                await loadLogs();
+                await loadScriptPreview();
+                await loadRemoteSummary();
+              }
+            } catch (error) {
+              console.error("清除目录请求异常", error);
+              const message = error && error.message ? error.message : "前端请求异常，请查看浏览器控制台或后台日志";
+              setStatus(`清除目录失败：${message}`);
+              showDialog("清除失败", `清除目录时发生异常：\n${message}`);
+            }
+          }
+        );
+      });
+
+      document.getElementById("profileSelect").addEventListener("change", event => {
+        const profile = profileState.profiles.find(item => item.name === event.target.value);
+        fillProfileForm(profile);
+      });
+
+      document.getElementById("saveProfileBtn").addEventListener("click", async () => {
+        const res = await fetch("/config-profiles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(profileFormData())
+        });
+        const result = await parseActionResponse(res, "配置保存成功", "配置保存失败");
+        if (result.ok) {
+          await loadProfiles(((result.data || {}).profile || {}).name);
+          await loadSystemLogs(activeSystemLogName);
+        }
+      });
+
+      document.getElementById("useProfileBtn").addEventListener("click", async () => {
+        const profileName = document.getElementById("profileSelect").value;
+        const res = await fetch("/config-profiles/active", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: profileName })
+        });
+        const result = await parseActionResponse(res, "切换成功", "切换失败");
+        if (result.ok) {
+          await loadProfiles(profileName);
+          await loadLogs();
+          await loadScriptPreview();
+          await loadRemoteSummary();
+          await testCurrentConnection(false);
+          await loadSystemLogs(activeSystemLogName);
+        }
+      });
+
+      document.getElementById("deleteProfileBtn").addEventListener("click", async () => {
+        const profileName = document.getElementById("profileSelect").value;
+        if (!profileName) {
+          setStatus("请先选择配置");
+          return;
+        }
+        const res = await fetch(`/config-profiles/${encodeURIComponent(profileName)}`, {
+          method: "DELETE"
+        });
+        const result = await parseActionResponse(res, "删除成功", "删除失败");
+        if (result.ok) {
+          await loadProfiles();
+          await loadLogs();
+          await loadScriptPreview();
+          await loadRemoteSummary();
+          await testCurrentConnection(false);
+          await loadSystemLogs(activeSystemLogName);
+        }
+      });
+
+      document.getElementById("togglePasswordBtn").addEventListener("click", () => {
+        const input = document.getElementById("sshPassword");
+        const btn = document.getElementById("togglePasswordBtn");
+        if (input.type === "password") {
+          input.type = "text";
+          btn.textContent = "隐藏密码";
+        } else {
+          input.type = "password";
+          btn.textContent = "显示密码";
+        }
+      });
+
+      // 生成脚本按钮点击事件
+      document.getElementById("genBtn").addEventListener("click", async () => {
+        try {
+          const opts = Array.from(document.querySelectorAll("input[name='opt']:checked")).map(i => i.value);
+          if (!opts.length) {
+            showDialog("生成失败", "还没有选择 SQL 项。请至少选择一个 SQL 项后再生成脚本。");
+            return;
+          }
+
+          setStatus(`准备生成脚本，当前选中 ${opts.length} 个脚本块...`);
+          const form = new FormData();
+          opts.forEach(v => form.append("options", v));
+          const res = await fetch("/generate", { method: "POST", body: form });
+          const result = await parseActionResponse(res, "生成成功", "生成失败");
+          if (result.ok) {
+            await loadScriptPreview();
+            setScriptVisible(true);
+            await loadSystemLogs("operations.log");
+          }
+        } catch (error) {
+          console.error("生成脚本请求失败", error);
+          const message = error && error.message ? error.message : "前端请求异常，请查看浏览器控制台或后台日志";
+          setStatus(`生成脚本失败：${message}`);
+          showDialog("生成失败", `生成脚本时发生异常：\n${message}`);
+        }
+      });
+
+      document.getElementById("clearSelectedOptsBtn").addEventListener("click", () => {
+        document.querySelectorAll("input[name='opt']").forEach(input => {
+          input.checked = false;
+        });
+        updateSelectedOptionCount();
+        setStatus("已清空当前脚本多选项，请重新选择需要生成的脚本块。");
+      });
+
+      document.getElementById("selectTmpOptsBtn").addEventListener("click", () => {
+        document.querySelectorAll("input[name='opt']").forEach(input => {
+          input.checked = input.dataset.group === "tmp";
+        });
+        updateSelectedOptionCount();
+        setStatus("已选择本次新增的 3 个临时 SQL：batchetl1_tmp、batchetl2_tmp、data1_tmp。");
+      });
+
+      // 执行脚本按钮点击事件
+      document.getElementById("runBtn").addEventListener("click", async () => {
+        try {
+          setStatus("正在执行远程 SQL 脚本，请稍等...");
+          const res = await fetch("/run", { method: "POST" });
+          await parseActionResponse(res, "执行成功", "执行失败");
+          await loadLogs();
+          await loadScriptPreview();
+          await loadSystemLogs("operations.log");
+        } catch (error) {
+          console.error("执行脚本请求异常", error);
+          const message = error && error.message ? error.message : "前端请求异常，请查看浏览器控制台或后台日志";
+          setStatus(`执行脚本失败：${message}`);
+          showDialog("执行失败", `执行脚本时发生异常：\n${message}`);
+        }
+      });
+
+      // 加载日志列表
+      async function loadLogs(scope) {
+        const targetScope = scope || activeRuntimeLogScope;
+        setRuntimeLogTab(targetScope);
+        const logList = document.getElementById("logList");
+        logList.innerHTML = "";
+        const res = await fetch(`/logs?scope=${encodeURIComponent(activeRuntimeLogScope)}`);
+        const data = await res.json();
+        runtimeLogMeta.textContent = `${activeRuntimeLogScope === "history" ? "历史备份" : "当前日志"}：${data.log_dir || "-"}`;
+        if (!res.ok || data.ok === false) {
+          logList.innerHTML = `<div class='log-item'>${escapeHtml(data.message || "读取日志失败")}</div>`;
+          return;
+        }
+        if (!data.logs || data.logs.length === 0) {
+          logList.innerHTML = `<div class='log-item'>${activeRuntimeLogScope === "history" ? "暂无历史备份日志" : "暂无当前日志文件"}</div>`;
+          return;
+        }
+        (data.logs || []).forEach((log, index) => {
+          const result = getLogResult(log.content || "");
+          const lastLine = result.lastLine || "-";
+          const item = document.createElement("div");
+          item.className = `log-item ${getLogColorClass(index)}`;
+          item.innerHTML = `
+            <div class="log-title-row">
+              <div class="log-title">${escapeHtml(log.name || "-")}</div>
+              <span class="log-result-badge ${result.className}">${result.label}</span>
+            </div>
+            <div class="log-meta">${activeRuntimeLogScope === "history" ? "备份时间" : "最新修改时间"}: ${escapeHtml(log.modified_at || "-")} / 最后一行: ${escapeHtml(lastLine)}</div>
+            <div class="log-content">${escapeHtml(log.content || "")}</div>
+          `;
+          logList.appendChild(item);
+        });
+      }
+
+      document.getElementById("refreshLogsBtn").addEventListener("click", async () => {
+        await loadLogs();
+      });
+      refreshRemoteSummaryBtn.addEventListener("click", async () => {
+        try {
+          setStatus("正在刷新远程目录内容...");
+          await loadRemoteSummary();
+          setStatus("远程目录内容已刷新。");
+        } catch (error) {
+          console.error("刷新远程目录请求异常", error);
+          const message = error && error.message ? error.message : "前端请求异常，请查看浏览器控制台或后台日志";
+          setStatus(`刷新远程目录失败：${message}`);
+          showDialog("刷新失败", `刷新远程目录时发生异常：\n${message}`);
+        }
+      });
+      currentLogTabBtn.addEventListener("click", async () => {
+        await loadLogs("current");
+      });
+      historyLogTabBtn.addEventListener("click", async () => {
+        await loadLogs("history");
+      });
+      toggleRuntimeLogsBtn.addEventListener("click", () => {
+        setRuntimeLogsVisible(!runtimeLogsVisible);
+      });
+      document.getElementById("refreshScriptBtn").addEventListener("click", loadScriptPreview);
+      document.getElementById("refreshSystemLogsBtn").addEventListener("click", async () => {
+        await loadSystemLogs(activeSystemLogName);
+      });
+      toggleSystemLogsBtn.addEventListener("click", () => {
+        setSystemLogsVisible(!systemLogsVisible);
+      });
+      document.getElementById("testConnectionBtn").addEventListener("click", async () => {
+        await testCurrentConnection(true);
+      });
+      appLogTabBtn.addEventListener("click", async () => {
+        await loadSystemLogs("app.log");
+      });
+      opsLogTabBtn.addEventListener("click", async () => {
+        await loadSystemLogs("operations.log");
+      });
+      fileInput.addEventListener("change", () => {
+        updateSelectedFileCount(fileInput.files.length || 0);
+      });
+      document.getElementById("defaultLocalDir").addEventListener("input", event => {
+        renderDefaultLocalDirHint(event.target.value || "");
+      });
+      document.querySelectorAll("input[name='opt']").forEach(input => {
+        input.addEventListener("change", updateSelectedOptionCount);
+      });
+      toggleScriptBtn.addEventListener("click", () => {
+        if (scriptEmptyState.style.display !== "none") {
+          return;
+        }
+        setScriptVisible(!scriptVisible);
+      });
+      document.getElementById("closeResultDialogBtn").addEventListener("click", closeDialog);
+      document.getElementById("cancelConfirmDialogBtn").addEventListener("click", closeConfirmDialog);
+      document.getElementById("confirmDialogBtn").addEventListener("click", async () => {
+        if (!pendingConfirmAction) {
+          closeConfirmDialog();
+          return;
+        }
+        const action = pendingConfirmAction;
+        closeConfirmDialog();
+        await action();
+      });
+      dialogMask.addEventListener("click", event => {
+        if (event.target === dialogMask) {
+          closeDialog();
+        }
+      });
+      confirmDialogMask.addEventListener("click", event => {
+        if (event.target === confirmDialogMask) {
+          closeConfirmDialog();
+        }
+      });
+
+      // 页面加载后先加载配置，再加载日志
+      (async function initPage() {
+        await loadProfiles();
+        await loadLogs();
+        await loadScriptPreview();
+        await loadRemoteSummary();
+        setScriptVisible(false);
+        setRuntimeLogsVisible(true);
+        updateSelectedOptionCount();
+        await testCurrentConnection(false);
+        await loadSystemLogs("app.log");
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+ENV/
+
+# Runtime logs and local runtime data
+runtime_logs/
+*.log
+
+# Local secrets and machine-specific config
+.env
+profiles.json
+md5_settings.json
+
+# macOS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Java scratch files not part of this Python project
+*.class
