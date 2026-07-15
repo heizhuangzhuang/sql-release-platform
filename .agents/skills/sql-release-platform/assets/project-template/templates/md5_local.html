@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>本地目录 MD5</title>
+    <style>
+      :root {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-soft: #f8fafc;
+        --ink: #172026;
+        --muted: #667085;
+        --line: #d8dee8;
+        --line-strong: #b9c3d2;
+        --accent: #0f766e;
+        --accent-strong: #115e59;
+        --blue: #2563eb;
+        --danger: #b42318;
+        --warning: #b45309;
+        --success: #15803d;
+        --shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+        --radius: 8px;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: linear-gradient(180deg, #eef3f8 0%, #f5f7fb 280px), var(--bg);
+        font-family: "Noto Sans SC", "Source Han Sans SC", "PingFang SC", sans-serif;
+      }
+      .container { width: min(980px, calc(100% - 32px)); margin: 24px auto 40px; }
+      .topbar { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+      .page-header { display: grid; gap: 10px; margin-bottom: 16px; }
+      h1, h2, h3, p { margin: 0; }
+      h1 { font-size: 26px; line-height: 1.2; }
+      h3 { font-size: 18px; line-height: 1.3; }
+      .subtitle, .muted, .meta, label { color: var(--muted); font-size: 13px; }
+      .subtitle { margin-top: 6px; line-height: 1.6; font-size: 14px; }
+      .eyebrow, .section-kicker { color: var(--accent); font-size: 12px; font-weight: 700; }
+      .layout { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 16px; align-items: start; }
+      .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+      .stack { display: grid; gap: 14px; }
+      .section-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+      .badge { display: inline-flex; align-items: center; min-height: 30px; padding: 6px 10px; border-radius: var(--radius); background: #e6f4f1; color: var(--accent-strong); font-size: 13px; font-weight: 700; }
+      .button-link, button { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; border: 1px solid transparent; border-radius: var(--radius); background: var(--accent); color: #fff; padding: 9px 14px; cursor: pointer; font-size: 14px; font-weight: 700; text-decoration: none; }
+      .button-link, button.ghost { border-color: var(--line); background: #fff; color: var(--accent-strong); }
+      button.secondary { background: var(--blue); }
+      button.danger { background: var(--danger); }
+      button.subtle { border-color: var(--line); background: #fff; color: var(--accent-strong); }
+      .notice { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); color: var(--muted); font-size: 14px; line-height: 1.7; }
+      .notice strong { color: var(--ink); }
+      input { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--ink); background: #fff; font-size: 14px; outline: none; }
+      input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+      .field { display: grid; gap: 6px; }
+      .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .field-wide { grid-column: 1 / -1; }
+      .password-row, .path-row, .path-card-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+      .path-row, .path-card, .method-card { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); }
+      .method-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .method-card.recommended { border-color: #b7ded3; background: #eef8f5; }
+      .method-title { font-weight: 700; }
+      .method-desc { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+      .path-card { display: grid; gap: 8px; }
+      .path-card-actions, .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+      .status { min-height: 48px; max-height: 160px; overflow: auto; padding: 12px; border-radius: var(--radius); background: #0f172a; color: #dbeafe; font-family: "SF Mono", "Menlo", "Consolas", monospace; font-size: 12px; line-height: 1.65; white-space: pre-wrap; }
+      .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+      .summary-item { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); }
+      .summary-label { color: var(--muted); font-size: 12px; }
+      .summary-value { margin-top: 6px; color: var(--ink); font-size: 24px; font-weight: 750; line-height: 1.15; }
+      .result-group { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+      .result-group-header { padding: 12px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+      .result-group:nth-child(6n+1) .result-group-header { background: #e6f4f1; border-left: 5px solid #0f766e; }
+      .result-group:nth-child(6n+2) .result-group-header { background: #eef4ff; border-left: 5px solid #2563eb; }
+      .result-group:nth-child(6n+3) .result-group-header { background: #fff7ed; border-left: 5px solid #f97316; }
+      .result-group:nth-child(6n+4) .result-group-header { background: #f0fdf4; border-left: 5px solid #16a34a; }
+      .result-group:nth-child(6n+5) .result-group-header { background: #fdf2f8; border-left: 5px solid #db2777; }
+      .result-group:nth-child(6n+6) .result-group-header { background: #f5f3ff; border-left: 5px solid #7c3aed; }
+      .path-title { font-weight: 800; overflow-wrap: anywhere; }
+      .table-wrap { overflow: auto; max-height: 460px; }
+      table { width: 100%; min-width: 860px; border-collapse: collapse; font-size: 13px; }
+      th, td { padding: 10px 12px; border-bottom: 1px solid #edf1f6; text-align: left; vertical-align: top; }
+      th { position: sticky; top: 0; background: #f1f5f9; color: #334155; z-index: 1; }
+      .mono { font-family: "SF Mono", "Menlo", "Consolas", monospace; overflow-wrap: anywhere; }
+      .error-list { margin: 0; padding: 12px 12px 12px 30px; color: var(--danger); background: #fff7f6; border-bottom: 1px solid #ffd8d3; }
+      .empty { padding: 18px; color: var(--muted); }
+      .count-pill { display: inline-flex; width: fit-content; min-height: 32px; align-items: center; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); color: var(--muted); }
+      @media (max-width: 960px) { .topbar, .page-header, .layout, .field-grid, .method-grid { grid-template-columns: 1fr; } .layout { display: grid; } .field-wide { grid-column: auto; } .summary-grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="topbar">
+        <div class="eyebrow">LOCAL DIRECTORY</div>
+        <div class="actions">
+          <a class="button-link" href="/md5">返回 MD5 入口</a>
+          <a class="button-link" href="/">发布执行台</a>
+        </div>
+      </div>
+
+      <div class="page-header">
+        <div>
+          <h1>本地目录 MD5</h1>
+          <div class="subtitle">推荐直接输入本机目录路径；也可以使用浏览器选择目录。系统只做 MD5 统计，不负责发布、不上传远程服务器。</div>
+        </div>
+        <div class="notice">
+          <strong>为什么浏览器提示“查看和复制文件”？</strong><br />这是 Chrome 对“选择目录读取权限”的固定文案。本系统只读取文件内容计算 MD5，不会把文件复制到其他地方。介意弹窗时，请使用手动路径方式。
+        </div>
+      </div>
+
+      <div class="layout">
+        <div class="card stack">
+          <div class="section-header">
+            <div>
+              <div class="section-kicker">SCAN CONDITIONS</div>
+              <h3>统计条件</h3>
+            </div>
+          </div>
+
+          <div class="method-grid">
+            <div class="method-card recommended">
+              <div class="method-title">推荐：手动输入路径</div>
+              <div class="method-desc">直接填写本机目录，例如 /path/to/sql。无浏览器授权弹窗，可保存配置。</div>
+            </div>
+            <div class="method-card">
+              <div class="method-title">可选：浏览器选择目录</div>
+              <div class="method-desc">适合临时目录。浏览器会弹固定权限提示，页面不会保存该目录授权。</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="suffixInput">文件后缀</label>
+            <input id="suffixInput" type="text" placeholder="例如 .sql,.txt；不填表示全部文件" />
+            <div class="meta">多个后缀用英文逗号分隔，例如：.sql,.txt,.csv</div>
+          </div>
+
+          <div id="pathList" class="stack"></div>
+
+          <div class="muted count-pill" id="selectedMeta">当前路径行：0 / 已选择目录：0 / 手动路径：0</div>
+
+          <div class="actions">
+            <button class="ghost" id="addPathBtn" type="button">添加路径</button>
+            <button class="subtle" id="saveSettingsBtn" type="button">保存手动路径配置</button>
+            <button class="secondary" id="scanBtn" type="button">开始统计 MD5</button>
+          </div>
+
+          <div class="status" id="statusText">等待操作。建议先手动输入目录路径，避免浏览器权限弹窗。</div>
+        </div>
+
+        <div class="stack">
+          <div class="card">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker">SUMMARY</div>
+                <h3>统计结果</h3>
+              </div>
+              <div class="meta" id="scanMeta">尚未统计</div>
+            </div>
+
+            <div class="summary-grid" style="margin-top: 12px;">
+              <div class="summary-item"><div class="summary-label">路径数</div><div class="summary-value" id="pathCount">0</div></div>
+              <div class="summary-item"><div class="summary-label">文件总数</div><div class="summary-value" id="fileCount">0</div></div>
+              <div class="summary-item"><div class="summary-label">文件总大小</div><div class="summary-value" id="totalSize">0 B</div></div>
+            </div>
+          </div>
+
+          <div id="results" class="stack">
+            <div class="card empty">暂无 MD5 统计结果。填写路径后点击“开始统计 MD5”。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const suffixInput = document.getElementById("suffixInput");
+      const pathList = document.getElementById("pathList");
+      const selectedMeta = document.getElementById("selectedMeta");
+      const statusText = document.getElementById("statusText");
+      const scanMeta = document.getElementById("scanMeta");
+      const pathCount = document.getElementById("pathCount");
+      const fileCount = document.getElementById("fileCount");
+      const totalSize = document.getElementById("totalSize");
+      const results = document.getElementById("results");
+
+      function escapeHtml(value) {
+        return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      }
+
+      function formatBytes(size) {
+        const value = Number(size || 0);
+        if (value < 1024) return `${value} B`;
+        if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+        if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+        return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
+      }
+
+      function isPlaceholderPath(value) {
+        return /^本地路径\s*\d+$/.test(String(value || "").trim());
+      }
+
+      function parseSuffixes(value) {
+        return String(value || "")
+          .replace(/，/g, ",")
+          .split(",")
+          .map(item => item.trim().toLowerCase())
+          .filter(Boolean)
+          .map(item => item.replace(/^\*/, ""))
+          .map(item => item.startsWith(".") ? item : `.${item}`)
+          .filter((item, index, arr) => !/[\\/\s"']/.test(item) && arr.indexOf(item) === index);
+      }
+
+      function fileMatchesSuffix(path, suffixes) {
+        if (!suffixes.length) return true;
+        const lowerPath = String(path || "").toLowerCase();
+        return suffixes.some(suffix => lowerPath.endsWith(suffix));
+      }
+
+      function isAbsoluteLocalPath(value) {
+        const path = String(value || "").trim();
+        return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
+      }
+
+      function addPathRow(value) {
+        const row = document.createElement("div");
+        row.className = "path-card";
+        row._directoryHandle = null;
+        row._browserDirectoryLabel = "";
+        row.innerHTML = `
+          <div class="path-card-header">
+            <input class="manual-path-input" type="text" value="${escapeHtml(isPlaceholderPath(value) ? "" : (value || ""))}" placeholder="推荐手动输入目录路径，例如 /path/to/sql" />
+            <button class="ghost remove-path-btn" type="button">删除</button>
+          </div>
+          <div class="path-card-actions">
+            <button class="choose-directory-btn" type="button">浏览器选择目录</button>
+            <button class="ghost clear-directory-btn" type="button">清空选择</button>
+          </div>
+          <div class="meta path-selected-meta">未选择浏览器目录；推荐直接在上方输入目录路径</div>
+        `;
+        const manualInput = row.querySelector(".manual-path-input");
+        const meta = row.querySelector(".path-selected-meta");
+
+        manualInput.addEventListener("input", () => {
+          if (row._directoryHandle && manualInput.value.trim() !== row._browserDirectoryLabel) {
+            row._directoryHandle = null;
+            row._browserDirectoryLabel = "";
+            meta.textContent = "已切换为手动输入路径；统计时会按输入框里的路径读取。";
+          }
+          updateSelectedMeta();
+        });
+
+        row.querySelector(".choose-directory-btn").addEventListener("click", async () => {
+          if (!window.showDirectoryPicker) {
+            statusText.textContent = "当前浏览器不支持目录选择。请直接在输入框里手动填写目录路径。";
+            return;
+          }
+          try {
+            const pickerOptions = { mode: "read" };
+            if (row._directoryHandle) {
+              pickerOptions.startIn = row._directoryHandle;
+            }
+            const handle = await window.showDirectoryPicker(pickerOptions);
+            const currentPath = manualInput.value.trim();
+            row._directoryHandle = handle;
+            row._browserDirectoryLabel = handle.name;
+            if (!currentPath || !isAbsoluteLocalPath(currentPath)) {
+              manualInput.value = handle.name;
+              meta.textContent = `已选择浏览器目录：${handle.name}。浏览器不允许页面读取完整绝对路径；如需刷新后仍按绝对路径统计，请在输入框填写绝对路径后保存。`;
+            } else {
+              meta.textContent = `已选择浏览器目录：${handle.name}。输入框已保留绝对路径：${currentPath}，保存后刷新仍会展示该路径。`;
+            }
+            statusText.textContent = `已选择目录：${handle.name}。统计时优先使用输入框里的绝对路径；没有绝对路径时使用浏览器授权目录。`;
+            updateSelectedMeta();
+          } catch (error) {
+            if (error && error.name !== "AbortError") {
+              statusText.textContent = `选择目录失败：${error.message || error}`;
+            }
+          }
+        });
+
+        row.querySelector(".clear-directory-btn").addEventListener("click", () => {
+          if (row._directoryHandle && manualInput.value.trim() === row._browserDirectoryLabel) {
+            manualInput.value = "";
+          }
+          row._directoryHandle = null;
+          row._browserDirectoryLabel = "";
+          meta.textContent = "未选择浏览器目录；推荐直接在上方输入目录路径";
+          updateSelectedMeta();
+        });
+
+        row.querySelector(".remove-path-btn").addEventListener("click", () => {
+          if (document.querySelectorAll(".path-card").length <= 1) {
+            manualInput.value = "";
+            row._directoryHandle = null;
+            row._browserDirectoryLabel = "";
+            meta.textContent = "未选择浏览器目录；推荐直接在上方输入目录路径";
+            updateSelectedMeta();
+            return;
+          }
+          row.remove();
+          updateSelectedMeta();
+        });
+
+        pathList.appendChild(row);
+      }
+
+      function setPathRows(paths) {
+        pathList.innerHTML = "";
+        const values = (paths || []).filter(path => path && !isPlaceholderPath(path));
+        (values.length ? values : [""]).forEach(addPathRow);
+        updateSelectedMeta();
+      }
+
+      function getRows() {
+        return Array.from(document.querySelectorAll(".path-card"));
+      }
+
+      function getManualPaths() {
+        return getRows()
+          .filter(row => !row._directoryHandle || isAbsoluteLocalPath(row.querySelector(".manual-path-input").value.trim()))
+          .map(row => row.querySelector(".manual-path-input").value.trim())
+          .filter(value => value && !isPlaceholderPath(value));
+      }
+
+      function getSelectedDirectoryRows() {
+        return getRows().filter(row => {
+          if (!row._directoryHandle) {
+            return false;
+          }
+          return !isAbsoluteLocalPath(row.querySelector(".manual-path-input").value.trim());
+        });
+      }
+
+      function getSavedPaths() {
+        return getRows()
+          .map(row => row.querySelector(".manual-path-input").value.trim())
+          .filter(value => value && !isPlaceholderPath(value));
+      }
+
+      function updateSelectedMeta() {
+        const rows = getRows();
+        const selectedCount = getSelectedDirectoryRows().length;
+        const savedCount = getSavedPaths().length;
+        selectedMeta.textContent = `当前路径行：${rows.length} / 已保存路径输入：${savedCount} / 浏览器授权目录：${selectedCount}`;
+      }
+
+      function renderResults(data) {
+        const groups = data.results || [];
+        pathCount.textContent = String(groups.length || 0);
+        fileCount.textContent = String(data.total_files || 0);
+        totalSize.textContent = formatBytes(data.total_size || 0);
+        scanMeta.textContent = `统计时间：${new Date().toLocaleString()}`;
+
+        if (!groups.length) {
+          results.innerHTML = "<div class='card empty'>没有符合后缀条件的文件。</div>";
+          return;
+        }
+
+        results.innerHTML = groups.map(group => {
+          const errors = (group.errors || []).length
+            ? `<ul class="error-list">${group.errors.map(error => `<li>${escapeHtml(error)}</li>`).join("")}</ul>`
+            : "";
+          const rows = (group.files || []).map(file => `
+            <tr>
+              <td class="mono">${escapeHtml(file.relative_path || file.full_path)}</td>
+              <td class="mono">${escapeHtml(file.md5)}</td>
+              <td>${formatBytes(file.size)}</td>
+              <td>${escapeHtml(file.created_at || "-")}</td>
+              <td>${escapeHtml(file.time_source || "-")}</td>
+            </tr>
+          `).join("");
+          const body = rows
+            ? `<div class="table-wrap"><table><thead><tr><th>文件路径</th><th>MD5</th><th>大小</th><th>时间</th><th>时间来源</th></tr></thead><tbody>${rows}</tbody></table></div>`
+            : "<div class='empty'>该路径下没有符合后缀条件的文件。</div>";
+          return `<div class="result-group"><div class="result-group-header"><div class="path-title">${escapeHtml(group.path || "本地路径")}</div><div class="meta">文件数：${group.total_files || 0} / 总大小：${formatBytes(group.total_size || 0)}</div></div>${errors}${body}</div>`;
+        }).join("");
+      }
+
+      async function scanManualPaths(manualPaths) {
+        if (!manualPaths.length) {
+          return { results: [], total_files: 0, total_size: 0 };
+        }
+        const form = new FormData();
+        form.append("suffixes", suffixInput.value);
+        form.append("manual_paths", JSON.stringify(manualPaths));
+        const res = await fetch("/md5-local-scan", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.message || "手动路径 MD5 统计失败");
+        }
+        return data;
+      }
+
+      async function collectDirectoryFiles(directoryHandle, suffixes) {
+        const collected = [];
+        async function walk(handle, basePath) {
+          for await (const [name, entry] of handle.entries()) {
+            const relativePath = basePath ? `${basePath}/${name}` : name;
+            if (entry.kind === "directory") {
+              await walk(entry, relativePath);
+              continue;
+            }
+            if (entry.kind === "file" && fileMatchesSuffix(relativePath, suffixes)) {
+              collected.push({ entry, relativePath });
+            }
+          }
+        }
+        await walk(directoryHandle, "");
+        collected.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "zh-CN"));
+        return collected;
+      }
+
+      function leftRotate(value, bits) {
+        return (value << bits) | (value >>> (32 - bits));
+      }
+
+      const md5ShiftAmounts = [
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+        5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+        4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21
+      ];
+      const md5Table = Array.from({ length: 64 }, (_, index) => Math.floor(Math.abs(Math.sin(index + 1)) * 4294967296) >>> 0);
+
+      function wordToHex(word) {
+        let output = "";
+        for (let index = 0; index < 4; index += 1) {
+          output += ((word >>> (index * 8)) & 255).toString(16).padStart(2, "0");
+        }
+        return output;
+      }
+
+      function md5ArrayBuffer(buffer) {
+        const bytes = new Uint8Array(buffer);
+        const bitLength = bytes.length * 8;
+        const bytesWithMarker = bytes.length + 1;
+        const zeroPadding = (bytesWithMarker % 64 <= 56) ? (56 - (bytesWithMarker % 64)) : (120 - (bytesWithMarker % 64));
+        const paddedLength = bytesWithMarker + zeroPadding + 8;
+        const padded = new Uint8Array(paddedLength);
+        padded.set(bytes);
+        padded[bytes.length] = 0x80;
+
+        const lowBits = bitLength >>> 0;
+        const highBits = Math.floor(bitLength / 4294967296) >>> 0;
+        for (let index = 0; index < 4; index += 1) {
+          padded[paddedLength - 8 + index] = (lowBits >>> (index * 8)) & 255;
+          padded[paddedLength - 4 + index] = (highBits >>> (index * 8)) & 255;
+        }
+
+        let a0 = 0x67452301;
+        let b0 = 0xefcdab89;
+        let c0 = 0x98badcfe;
+        let d0 = 0x10325476;
+
+        for (let offset = 0; offset < paddedLength; offset += 64) {
+          const words = new Array(16);
+          for (let index = 0; index < 16; index += 1) {
+            const wordOffset = offset + index * 4;
+            words[index] = padded[wordOffset]
+              | (padded[wordOffset + 1] << 8)
+              | (padded[wordOffset + 2] << 16)
+              | (padded[wordOffset + 3] << 24);
+          }
+
+          let a = a0;
+          let b = b0;
+          let c = c0;
+          let d = d0;
+
+          for (let index = 0; index < 64; index += 1) {
+            let funcResult;
+            let wordIndex;
+            if (index < 16) {
+              funcResult = (b & c) | ((~b) & d);
+              wordIndex = index;
+            } else if (index < 32) {
+              funcResult = (d & b) | ((~d) & c);
+              wordIndex = (5 * index + 1) % 16;
+            } else if (index < 48) {
+              funcResult = b ^ c ^ d;
+              wordIndex = (3 * index + 5) % 16;
+            } else {
+              funcResult = c ^ (b | (~d));
+              wordIndex = (7 * index) % 16;
+            }
+
+            const next = d;
+            d = c;
+            c = b;
+            const sum = (a + funcResult + md5Table[index] + words[wordIndex]) >>> 0;
+            b = (b + leftRotate(sum, md5ShiftAmounts[index])) >>> 0;
+            a = next;
+          }
+
+          a0 = (a0 + a) >>> 0;
+          b0 = (b0 + b) >>> 0;
+          c0 = (c0 + c) >>> 0;
+          d0 = (d0 + d) >>> 0;
+        }
+
+        return wordToHex(a0) + wordToHex(b0) + wordToHex(c0) + wordToHex(d0);
+      }
+
+      async function scanDirectoryRow(row, suffixes) {
+        const handle = row._directoryHandle;
+        const group = { path: handle.name, files: [], errors: [], total_files: 0, total_size: 0 };
+        const selectedFiles = await collectDirectoryFiles(handle, suffixes);
+        let processed = 0;
+        for (const selectedFile of selectedFiles) {
+          try {
+            const file = await selectedFile.entry.getFile();
+            const md5 = md5ArrayBuffer(await file.arrayBuffer());
+            group.files.push({
+              relative_path: selectedFile.relativePath,
+              full_path: `${handle.name}/${selectedFile.relativePath}`,
+              md5,
+              size: file.size,
+              created_at: new Date(file.lastModified).toLocaleString(),
+              time_source: "本地文件修改时间（浏览器读取）"
+            });
+            group.total_files += 1;
+            group.total_size += file.size;
+            processed += 1;
+            if (processed % 10 === 0) {
+              statusText.textContent = `正在统计目录 ${handle.name}：已处理 ${processed}/${selectedFiles.length} 个文件...`;
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+          } catch (error) {
+            group.errors.push(`${selectedFile.relativePath} 读取失败：${error.message || error}`);
+          }
+        }
+        return group;
+      }
+
+      async function loadSettings() {
+        const res = await fetch("/md5-local-settings");
+        const data = await res.json();
+        if (res.ok && data.ok !== false) {
+          suffixInput.value = data.suffixes || "";
+          setPathRows(data.paths || []);
+          return;
+        }
+        setPathRows([]);
+      }
+
+      document.getElementById("addPathBtn").addEventListener("click", () => {
+        addPathRow("");
+        updateSelectedMeta();
+      });
+
+      document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
+        const res = await fetch("/md5-local-settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paths: getSavedPaths(), suffixes: suffixInput.value })
+        });
+        const data = await res.json();
+        statusText.textContent = data.message || (res.ok ? "保存成功。已保存输入框里的路径，刷新页面后会继续展示，除非你删除后再保存。" : "保存失败");
+        if (res.ok && data.ok !== false) {
+          suffixInput.value = data.suffixes || "";
+        }
+      });
+
+      document.getElementById("scanBtn").addEventListener("click", async () => {
+        const manualPaths = getManualPaths();
+        const selectedDirectoryRows = getSelectedDirectoryRows();
+        if (!manualPaths.length && !selectedDirectoryRows.length) {
+          statusText.textContent = "请先手动填写一个目录路径，或点击“浏览器选择目录”。";
+          return;
+        }
+
+        statusText.textContent = `正在统计：手动路径 ${manualPaths.length} 个，浏览器选择目录 ${selectedDirectoryRows.length} 个，请稍候...`;
+        results.innerHTML = "<div class='card empty'>正在统计 MD5...</div>";
+
+        try {
+          const combined = { results: [], total_files: 0, total_size: 0 };
+          const manualData = await scanManualPaths(manualPaths);
+          combined.results.push(...(manualData.results || []));
+          combined.total_files += manualData.total_files || 0;
+          combined.total_size += manualData.total_size || 0;
+
+          const suffixes = parseSuffixes(suffixInput.value);
+          for (const row of selectedDirectoryRows) {
+            statusText.textContent = `正在读取目录：${row._directoryHandle.name}...`;
+            const group = await scanDirectoryRow(row, suffixes);
+            combined.results.push(group);
+            combined.total_files += group.total_files || 0;
+            combined.total_size += group.total_size || 0;
+          }
+
+          statusText.textContent = `统计完成：${combined.total_files || 0} 个文件。`;
+          renderResults(combined);
+        } catch (error) {
+          statusText.textContent = `本地 MD5 统计失败：${error.message || error}`;
+          results.innerHTML = "<div class='card empty'>统计失败，请查看左侧提示。</div>";
+        }
+      });
+
+      loadSettings();
+    </script>
+  </body>
+</html>

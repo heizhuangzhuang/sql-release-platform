@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>远程服务器 MD5</title>
+    <style>
+      :root {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-soft: #f8fafc;
+        --ink: #172026;
+        --muted: #667085;
+        --line: #d8dee8;
+        --line-strong: #b9c3d2;
+        --accent: #0f766e;
+        --accent-strong: #115e59;
+        --blue: #2563eb;
+        --danger: #b42318;
+        --warning: #b45309;
+        --success: #15803d;
+        --shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+        --radius: 8px;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: linear-gradient(180deg, #eef3f8 0%, #f5f7fb 280px), var(--bg);
+        font-family: "Noto Sans SC", "Source Han Sans SC", "PingFang SC", sans-serif;
+      }
+      .container { width: min(980px, calc(100% - 32px)); margin: 24px auto 40px; }
+      .topbar { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+      .page-header { display: grid; gap: 10px; margin-bottom: 16px; }
+      h1, h2, h3, p { margin: 0; }
+      h1 { font-size: 26px; line-height: 1.2; }
+      h3 { font-size: 18px; line-height: 1.3; }
+      .subtitle, .muted, .meta, label { color: var(--muted); font-size: 13px; }
+      .subtitle { margin-top: 6px; line-height: 1.6; font-size: 14px; }
+      .eyebrow, .section-kicker { color: var(--accent); font-size: 12px; font-weight: 700; }
+      .layout { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 16px; align-items: start; }
+      .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+      .stack { display: grid; gap: 14px; }
+      .section-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+      .badge { display: inline-flex; align-items: center; min-height: 30px; padding: 6px 10px; border-radius: var(--radius); background: #e6f4f1; color: var(--accent-strong); font-size: 13px; font-weight: 700; }
+      .button-link, button { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; border: 1px solid transparent; border-radius: var(--radius); background: var(--accent); color: #fff; padding: 9px 14px; cursor: pointer; font-size: 14px; font-weight: 700; text-decoration: none; }
+      .button-link, button.ghost { border-color: var(--line); background: #fff; color: var(--accent-strong); }
+      button.secondary { background: var(--blue); }
+      button.danger { background: var(--danger); }
+      button.subtle { border-color: var(--line); background: #fff; color: var(--accent-strong); }
+      .notice { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); color: var(--muted); font-size: 14px; line-height: 1.7; }
+      .notice strong { color: var(--ink); }
+      input { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--ink); background: #fff; font-size: 14px; outline: none; }
+      input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+      .field { display: grid; gap: 6px; }
+      .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .field-wide { grid-column: 1 / -1; }
+      .password-row, .path-row, .path-card-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+      .path-row, .path-card, .method-card { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); }
+      .method-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .method-card.recommended { border-color: #b7ded3; background: #eef8f5; }
+      .method-title { font-weight: 700; }
+      .method-desc { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+      .path-card { display: grid; gap: 8px; }
+      .path-card-actions, .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+      .status { min-height: 48px; max-height: 160px; overflow: auto; padding: 12px; border-radius: var(--radius); background: #0f172a; color: #dbeafe; font-family: "SF Mono", "Menlo", "Consolas", monospace; font-size: 12px; line-height: 1.65; white-space: pre-wrap; }
+      .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+      .summary-item { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); }
+      .summary-label { color: var(--muted); font-size: 12px; }
+      .summary-value { margin-top: 6px; color: var(--ink); font-size: 24px; font-weight: 750; line-height: 1.15; }
+      .result-group { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+      .result-group-header { padding: 12px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+      .result-group:nth-child(6n+1) .result-group-header { background: #e6f4f1; border-left: 5px solid #0f766e; }
+      .result-group:nth-child(6n+2) .result-group-header { background: #eef4ff; border-left: 5px solid #2563eb; }
+      .result-group:nth-child(6n+3) .result-group-header { background: #fff7ed; border-left: 5px solid #f97316; }
+      .result-group:nth-child(6n+4) .result-group-header { background: #f0fdf4; border-left: 5px solid #16a34a; }
+      .result-group:nth-child(6n+5) .result-group-header { background: #fdf2f8; border-left: 5px solid #db2777; }
+      .result-group:nth-child(6n+6) .result-group-header { background: #f5f3ff; border-left: 5px solid #7c3aed; }
+      .path-title { font-weight: 800; overflow-wrap: anywhere; }
+      .table-wrap { overflow: auto; max-height: 460px; }
+      table { width: 100%; min-width: 860px; border-collapse: collapse; font-size: 13px; }
+      th, td { padding: 10px 12px; border-bottom: 1px solid #edf1f6; text-align: left; vertical-align: top; }
+      th { position: sticky; top: 0; background: #f1f5f9; color: #334155; z-index: 1; }
+      .mono { font-family: "SF Mono", "Menlo", "Consolas", monospace; overflow-wrap: anywhere; }
+      .error-list { margin: 0; padding: 12px 12px 12px 30px; color: var(--danger); background: #fff7f6; border-bottom: 1px solid #ffd8d3; }
+      .empty { padding: 18px; color: var(--muted); }
+      .count-pill { display: inline-flex; width: fit-content; min-height: 32px; align-items: center; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); color: var(--muted); }
+      @media (max-width: 960px) { .topbar, .page-header, .layout, .field-grid, .method-grid { grid-template-columns: 1fr; } .layout { display: grid; } .field-wide { grid-column: auto; } .summary-grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="topbar">
+        <div class="eyebrow">REMOTE SERVER</div>
+        <div class="actions">
+          <a class="button-link" href="/md5">返回 MD5 入口</a>
+          <a class="button-link" href="/">发布执行台</a>
+        </div>
+      </div>
+
+      <div class="page-header">
+        <div>
+          <h1>远程服务器 MD5</h1>
+          <div class="subtitle">通过 SSH 连接远程服务器，按路径和文件后缀生成 MD5 清单。适合上线前后做服务器目录核对。</div>
+        </div>
+        <div class="notice">
+          <strong>只读统计说明</strong><br />远程统计会执行读取类命令，获取文件 MD5、大小和时间；不会删除、覆盖或修改服务器文件。
+        </div>
+      </div>
+
+      <div class="layout">
+        <div class="card stack">
+          <div class="section-header">
+            <div>
+              <div class="section-kicker">REMOTE CONFIG</div>
+              <h3>连接与路径</h3>
+            </div>
+            <span id="profileBadge" class="badge">当前环境: -</span>
+          </div>
+
+          <div class="muted" id="profileMeta">正在读取远程 MD5 配置...</div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="profileName">配置名称</label>
+              <input id="profileName" type="text" placeholder="例如 T2 / Sit1 / zsc" />
+            </div>
+            <div class="field">
+              <label for="sshHost">服务器 IP / SSH_HOST</label>
+              <input id="sshHost" type="text" placeholder="20.240.39.56" />
+            </div>
+            <div class="field">
+              <label for="sshPort">SSH_PORT</label>
+              <input id="sshPort" type="number" value="22" />
+            </div>
+            <div class="field">
+              <label for="sshUser">SSH_USER</label>
+              <input id="sshUser" type="text" placeholder="admin" />
+            </div>
+            <div class="field field-wide">
+              <label for="sshPassword">SSH_PASSWORD</label>
+              <div class="password-row">
+                <input id="sshPassword" type="password" placeholder="密码" />
+                <button class="ghost" id="togglePasswordBtn" type="button">显示密码</button>
+              </div>
+            </div>
+            <div class="field field-wide">
+              <label for="remoteDir">默认远程路径</label>
+              <input id="remoteDir" type="text" placeholder="/opt/upload" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="suffixInput">文件后缀</label>
+            <input id="suffixInput" type="text" placeholder="例如 .sql,.txt；不填表示全部文件" />
+            <div class="meta">多个后缀用英文逗号分隔。路径可添加多个，结果会按路径分组展示。</div>
+          </div>
+
+          <div id="pathList" class="stack"></div>
+
+          <div class="actions">
+            <button class="ghost" id="addPathBtn" type="button">添加路径</button>
+            <button class="ghost" id="useConfigPathBtn" type="button">使用默认路径</button>
+            <button class="ghost" id="saveSettingsBtn" type="button">保存远程配置</button>
+            <button class="secondary" id="scanBtn" type="button">开始统计 MD5</button>
+          </div>
+
+          <div class="status" id="statusText">等待操作。请确认服务器、账号、路径和后缀。</div>
+        </div>
+
+        <div class="stack">
+          <div class="card">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker">SUMMARY</div>
+                <h3>统计结果</h3>
+              </div>
+              <div class="meta" id="scanMeta">尚未统计</div>
+            </div>
+
+            <div class="summary-grid" style="margin-top: 12px;">
+              <div class="summary-item"><div class="summary-label">路径数</div><div class="summary-value" id="pathCount">0</div></div>
+              <div class="summary-item"><div class="summary-label">文件总数</div><div class="summary-value" id="fileCount">0</div></div>
+              <div class="summary-item"><div class="summary-label">文件总大小</div><div class="summary-value" id="totalSize">0 B</div></div>
+            </div>
+          </div>
+
+          <div id="results" class="stack">
+            <div class="card empty">暂无 MD5 统计结果。填写路径后点击“开始统计 MD5”。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const profileBadge = document.getElementById("profileBadge");
+      const profileMeta = document.getElementById("profileMeta");
+      const pathList = document.getElementById("pathList");
+      const suffixInput = document.getElementById("suffixInput");
+      const profileName = document.getElementById("profileName");
+      const sshHost = document.getElementById("sshHost");
+      const sshPort = document.getElementById("sshPort");
+      const sshUser = document.getElementById("sshUser");
+      const sshPassword = document.getElementById("sshPassword");
+      const remoteDir = document.getElementById("remoteDir");
+      const statusText = document.getElementById("statusText");
+      const scanMeta = document.getElementById("scanMeta");
+      const pathCount = document.getElementById("pathCount");
+      const fileCount = document.getElementById("fileCount");
+      const totalSize = document.getElementById("totalSize");
+      const results = document.getElementById("results");
+      let configPath = "";
+
+      function escapeHtml(value) {
+        return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      }
+
+      function formatBytes(size) {
+        const value = Number(size || 0);
+        if (value < 1024) return `${value} B`;
+        if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+        if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+        return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
+      }
+
+      function addPathRow(value) {
+        const row = document.createElement("div");
+        row.className = "path-row";
+        row.innerHTML = `<input class="path-input" type="text" value="${escapeHtml(value || "")}" placeholder="远程目录，例如 /opt/upload" /><button class="danger remove-path-btn" type="button">删除</button>`;
+        row.querySelector(".remove-path-btn").addEventListener("click", () => {
+          if (document.querySelectorAll(".path-input").length <= 1) {
+            row.querySelector(".path-input").value = "";
+            return;
+          }
+          row.remove();
+        });
+        pathList.appendChild(row);
+      }
+
+      function setPaths(paths) {
+        pathList.innerHTML = "";
+        const values = paths && paths.length ? paths : [configPath || ""];
+        values.forEach(addPathRow);
+      }
+
+      function getPaths() {
+        return Array.from(document.querySelectorAll(".path-input")).map(input => input.value.trim()).filter(Boolean);
+      }
+
+      function getConnection() {
+        return {
+          name: profileName.value.trim() || "md5-remote",
+          ssh_host: sshHost.value.trim(),
+          ssh_port: Number(sshPort.value || 22),
+          ssh_user: sshUser.value.trim(),
+          ssh_password: sshPassword.value,
+          remote_dir: remoteDir.value.trim() || (getPaths()[0] || "/")
+        };
+      }
+
+      function fillConnection(profile) {
+        profileName.value = profile.name || "";
+        sshHost.value = profile.ssh_host || "";
+        sshPort.value = profile.ssh_port || 22;
+        sshUser.value = profile.ssh_user || "";
+        sshPassword.value = profile.ssh_password || "";
+        remoteDir.value = profile.remote_dir || "";
+      }
+
+      function renderResults(data) {
+        const groups = data.results || [];
+        pathCount.textContent = String(groups.length || 0);
+        fileCount.textContent = String(data.total_files || 0);
+        totalSize.textContent = formatBytes(data.total_size || 0);
+        scanMeta.textContent = `环境：${data.profile_name || "-"} / ${new Date().toLocaleString()}`;
+
+        if (!groups.length) {
+          results.innerHTML = "<div class='card empty'>没有返回任何统计结果。</div>";
+          return;
+        }
+
+        results.innerHTML = groups.map(group => {
+          const rows = (group.files || []).map(file => `
+            <tr>
+              <td class="mono">${escapeHtml(file.relative_path || file.full_path)}</td>
+              <td class="mono">${escapeHtml(file.md5)}</td>
+              <td>${formatBytes(file.size)}</td>
+              <td>${escapeHtml(file.created_at || "-")}</td>
+              <td>${escapeHtml(file.time_source || "-")}</td>
+            </tr>
+          `).join("");
+          const errors = (group.errors || []).map(item => `<div class="empty">${escapeHtml(item)}</div>`).join("");
+          const body = rows
+            ? `<div class="table-wrap"><table><thead><tr><th>文件路径</th><th>MD5</th><th>大小</th><th>创建时间</th><th>时间来源</th></tr></thead><tbody>${rows}</tbody></table></div>`
+            : "<div class='empty'>该路径下没有符合条件的文件。</div>";
+          return `<div class="result-group"><div class="result-group-header"><div><div class="path-title">${escapeHtml(group.path)}</div><div class="meta">文件数：${group.total_files || 0} / 总大小：${formatBytes(group.total_size || 0)}</div></div></div>${errors}${body}</div>`;
+        }).join("");
+      }
+
+      async function loadDefaults() {
+        const res = await fetch("/md5-defaults");
+        const data = await res.json();
+        if (!res.ok || data.ok === false) {
+          profileMeta.textContent = data.message || "读取当前环境失败";
+          statusText.textContent = data.message || "读取当前环境失败";
+          addPathRow("");
+          return;
+        }
+        const profile = data.profile || {};
+        configPath = profile.remote_dir || "";
+        fillConnection(profile);
+        profileBadge.textContent = `MD5配置: ${profile.name || "-"}`;
+        profileMeta.textContent = `服务器：${profile.ssh_host || "-"} / 默认路径：${configPath || "-"}`;
+        suffixInput.value = data.suffixes || "";
+        setPaths(data.paths || [configPath]);
+      }
+
+      async function saveSettings() {
+        const paths = getPaths();
+        const res = await fetch("/md5-remote-settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connection: getConnection(), paths, suffixes: suffixInput.value })
+        });
+        const data = await res.json();
+        statusText.textContent = data.message || (res.ok ? "保存成功：连接配置、路径和后缀已保存。" : "保存失败");
+        if (res.ok && data.ok !== false) {
+          setPaths(data.paths || paths);
+          suffixInput.value = data.suffixes || "";
+          fillConnection((data.profile || {}));
+          profileBadge.textContent = `MD5配置: ${((data.profile || {}).name) || "-"}`;
+        }
+      }
+
+      document.getElementById("addPathBtn").addEventListener("click", () => addPathRow(""));
+      document.getElementById("useConfigPathBtn").addEventListener("click", () => addPathRow(configPath || ""));
+      document.getElementById("saveSettingsBtn").addEventListener("click", saveSettings);
+      document.getElementById("togglePasswordBtn").addEventListener("click", () => {
+        const btn = document.getElementById("togglePasswordBtn");
+        if (sshPassword.type === "password") {
+          sshPassword.type = "text";
+          btn.textContent = "隐藏密码";
+        } else {
+          sshPassword.type = "password";
+          btn.textContent = "显示密码";
+        }
+      });
+      document.getElementById("scanBtn").addEventListener("click", async () => {
+        const paths = getPaths();
+        if (!paths.length) {
+          statusText.textContent = "请至少填写一个远程路径。";
+          return;
+        }
+        statusText.textContent = `正在连接服务器并统计 ${paths.length} 个路径，请稍候...`;
+        results.innerHTML = "<div class='card empty'>正在统计 MD5...</div>";
+        const res = await fetch("/md5-scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connection: getConnection(), paths, suffixes: suffixInput.value })
+        });
+        const data = await res.json();
+        if (!res.ok || data.ok === false) {
+          statusText.textContent = data.message || "MD5 统计失败";
+          results.innerHTML = "<div class='card empty'>统计失败，请查看左侧提示或后台日志。</div>";
+          return;
+        }
+        statusText.textContent = `统计完成：共 ${data.total_files || 0} 个文件，结果已按路径分组展示。`;
+        renderResults(data);
+      });
+
+      loadDefaults();
+    </script>
+  </body>
+</html>

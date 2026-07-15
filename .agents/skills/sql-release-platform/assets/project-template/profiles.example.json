@@ -1,0 +1,15 @@
+{
+  "active": "default",
+  "profiles": [
+    {
+      "name": "default",
+      "ssh_host": "127.0.0.1",
+      "ssh_port": 22,
+      "ssh_user": "admin",
+      "ssh_password": "your_password",
+      "remote_dir": "/opt/upload",
+      "script_name": "224.sh",
+      "default_local_dir": ""
+    }
+  ]
+}

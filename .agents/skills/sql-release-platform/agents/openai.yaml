@@ -1,0 +1,4 @@
+interface:
+  display_name: "SQL 发布执行台"
+  short_description: "维护、扩展并重建 SQL 发布与 MD5 核对平台"
+  default_prompt: "使用 $sql-release-platform 检查并安全维护当前 SQL 发布执行台。"
