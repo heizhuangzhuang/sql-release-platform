@@ -36,6 +36,10 @@ description: 维护、扩展、排查、运行或重建基于 FastAPI 的 SQL �
 
 ## 新增或修改 SQL 选项
 
+如果新 SQL 使用标准 `psql` 命令，并且只需要配置 SQL 文件名、远程 PG 地址和端口、数据库、账户、密码及独立日志，优先使用页面“常规 SQL”中的自定义配置，不再修改源码。自定义项按环境保存，最多 30 个。
+
+只有需要特殊连接方式、固定产品选项或不同命令结构时，才按照下面步骤修改代码：
+
 每个独立 SQL 文件按照以下步骤处理：
 
 1. 在 `main.py` 的 `SCRIPT_BLOCKS` 增加一个唯一选项，配置页面标题、独立日志文件和精确的 `psql` 命令。
@@ -97,11 +101,12 @@ python3 scripts/audit_project.py --project /项目目录
 
 同时执行项目已有的 Python 3.8 兼容测试。如果项目暂时没有自动化测试，至少完成：
 
-1. 编译检查 `main.py`、`config.py` 和 `logging_setup.py`。
-2. 启动后确认 `/`、`/md5`、`/md5/local`、`/md5/remote` 可以访问。
-3. 使用成功和失败样例验证本次修改涉及的接口。
-4. 确认密码、运行配置和日志仍然被 Git 忽略。
-5. 明确说明哪些远程操作因环境限制没有实际执行。
+1. 编译检查 `main.py`、`config.py`、`logging_setup.py` 和 `storage_utils.py`。
+2. 执行 `python3 -m unittest discover -s tests -v` 离线回归测试。
+3. 启动后确认 `/`、`/md5`、`/md5/local`、`/md5/remote` 可以访问。
+4. 使用成功和失败样例验证本次修改涉及的接口。
+5. 确认密码、运行配置和日志仍然被 Git 忽略。
+6. 明确说明哪些远程操作因环境限制没有实际执行。
 
 ## 内置资源
 

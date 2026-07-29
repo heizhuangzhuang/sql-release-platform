@@ -103,7 +103,8 @@ UVICORN_BIN=/home/your_user/.local/bin/uvicorn RELOAD= ./start_uvicorn.sh
 完成修改前执行：
 
 ```bash
-python3 -m py_compile main.py config.py logging_setup.py
+python3 -m py_compile main.py config.py logging_setup.py storage_utils.py
+python3 -m unittest discover -s tests -v
 python3 /Skill目录/scripts/audit_project.py --project /项目目录
 ```
 

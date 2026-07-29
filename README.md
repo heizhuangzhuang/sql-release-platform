@@ -32,7 +32,10 @@
 ├── main.py                     # FastAPI 入口，包含页面路由、上传、生成脚本、执行脚本、日志、MD5 接口
 ├── config.py                   # 多环境配置读写逻辑
 ├── logging_setup.py            # 系统日志和操作日志配置
+├── storage_utils.py            # JSON 原子写入和配置文件安全读取
 ├── requirements.txt            # Python 依赖
+├── requirements-dev.txt        # 可选的代码规范检查依赖
+├── pyproject.toml              # Python 3.8 与 Ruff 代码规范
 ├── start.sh                    # Linux 一键启动脚本，自动创建虚拟环境并安装依赖
 ├── start_uvicorn.sh            # 使用指定 uvicorn 路径启动的脚本
 ├── templates/
@@ -40,6 +43,7 @@
 │   ├── md5.html                # MD5 首页
 │   ├── md5_local.html          # 本地目录 MD5 页面
 │   └── md5_remote.html         # 远程服务器 MD5 页面
+├── tests/                      # 不连接远程服务器的核心与页面契约测试
 ├── .env.example                # 环境变量示例，不要填写真实密码提交
 ├── profiles.example.json       # 多环境配置示例，不要填写真实密码提交
 └── md5_settings.example.json   # MD5 配置示例
@@ -106,8 +110,10 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 - `REMOTE_DIR`：远程服务器上传和执行目录，例如 `/opt/upload`。
 - `脚本名称`：默认 `224.sh`。
 - `默认本地目录`：选择目录时的参考路径，也可以手动重新选择。
+- `数据库 IP / 主机名`、`数据库端口`、`数据库用户`、`数据库密码`：仅供两个远程迁移 SQL 使用；原有 SQL 仍连接远程 Linux 本机数据库。
 
 配置会保存到本地 `profiles.json`。该文件包含密码，已在 `.gitignore` 中排除，不应提交到 GitHub。
+系统使用临时文件加原子替换保存运行配置，并把配置文件权限设置为仅当前系统用户可读写，降低并发保存或进程中断导致 JSON 损坏的风险。
 
 如果首次启动没有 `profiles.json`，系统会尝试读取 `.env` 初始化一个 `default` 环境。可以参考 `.env.example`。
 
@@ -121,6 +127,10 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 6. 展开脚本内容，确认无误。
 7. 点击“执行脚本”，远程执行 `bash 224.sh`。
 8. 在“日志内容”区域查看当前日志和历史备份日志。
+
+远程迁移 SQL `db_pmigrel00ldb_88.sql` 和 `db_pmigrel00ldb_98.sql` 都连接数据库 `pmighis001db`，数据库连接取自当前环境配置，并分别写入独立日志。
+
+“常规 SQL”支持为当前环境新增自定义项。填写根目录 SQL 文件名、远程 PG 地址和端口、目标数据库、PG 账户、PG 密码和独立日志文件名后即可长期保存、勾选生成或删除。每个环境最多配置 30 个，密码不会写入系统日志，脚本预览会显示为 `******`。
 
 ## 日志成功/失败判断
 
@@ -159,6 +169,26 @@ http://127.0.0.1:8000/md5
 ```
 
 MD5 配置会保存到本地 `md5_settings.json`。该文件可能包含本机路径，已在 `.gitignore` 中排除。
+
+## 本地质量检查
+
+以下检查不会建立 SSH 连接、上传文件或执行 SQL：
+
+```bash
+python3 -m py_compile main.py config.py logging_setup.py storage_utils.py
+python3 -m unittest discover -s tests -v
+python3 .agents/skills/sql-release-platform/scripts/audit_project.py --project .
+```
+
+需要执行统一代码规范检查时：
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+ruff check .
+ruff format --check main.py config.py logging_setup.py storage_utils.py tests
+```
+
+测试覆盖配置保存与切换、远程 PG 脚本生成、密码脱敏、日志名称、MD5 配置，以及关键页面 ID 和接口绑定。
 
 ## 安全提醒
 
@@ -202,10 +232,14 @@ MD5 配置会保存到本地 `md5_settings.json`。该文件可能包含本机�
 main.py
 config.py
 logging_setup.py
+storage_utils.py
 requirements.txt
+requirements-dev.txt
+pyproject.toml
 start.sh
 start_uvicorn.sh
 templates/
+tests/
 README.md
 .gitignore
 .env.example

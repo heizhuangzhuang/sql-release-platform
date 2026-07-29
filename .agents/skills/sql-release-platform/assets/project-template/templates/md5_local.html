@@ -69,6 +69,16 @@
       .summary-item { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); }
       .summary-label { color: var(--muted); font-size: 12px; }
       .summary-value { margin-top: 6px; color: var(--ink); font-size: 24px; font-weight: 750; line-height: 1.15; }
+      .sort-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(135deg, #f8fafc, #eef8f5); }
+      .sort-copy { display: grid; gap: 3px; min-width: 0; }
+      .sort-title { color: var(--ink); font-size: 13px; font-weight: 800; }
+      .sort-hint { color: var(--muted); font-size: 12px; line-height: 1.5; }
+      .sort-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+      .sort-options { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+      button.sort-option { min-height: 34px; padding: 7px 10px; border: 0; background: transparent; color: var(--muted); }
+      button.sort-option.active { background: #dff3ee; color: var(--accent-strong); box-shadow: inset 0 0 0 1px #b7ded3; }
+      button.sort-direction { min-width: 88px; min-height: 40px; padding: 8px 12px; background: var(--accent); }
+      button:disabled { cursor: not-allowed; opacity: 0.52; }
       .result-group { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
       .result-group-header { padding: 12px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
       .result-group:nth-child(6n+1) .result-group-header { background: #e6f4f1; border-left: 5px solid #0f766e; }
@@ -82,11 +92,14 @@
       table { width: 100%; min-width: 860px; border-collapse: collapse; font-size: 13px; }
       th, td { padding: 10px 12px; border-bottom: 1px solid #edf1f6; text-align: left; vertical-align: top; }
       th { position: sticky; top: 0; background: #f1f5f9; color: #334155; z-index: 1; }
+      th.sorted-column { color: var(--accent-strong); background: #e6f4f1; }
+      .sort-indicator { display: inline-flex; margin-left: 5px; color: var(--accent); font-size: 11px; font-weight: 800; }
       .mono { font-family: "SF Mono", "Menlo", "Consolas", monospace; overflow-wrap: anywhere; }
       .error-list { margin: 0; padding: 12px 12px 12px 30px; color: var(--danger); background: #fff7f6; border-bottom: 1px solid #ffd8d3; }
       .empty { padding: 18px; color: var(--muted); }
       .count-pill { display: inline-flex; width: fit-content; min-height: 32px; align-items: center; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); color: var(--muted); }
-      @media (max-width: 960px) { .topbar, .page-header, .layout, .field-grid, .method-grid { grid-template-columns: 1fr; } .layout { display: grid; } .field-wide { grid-column: auto; } .summary-grid { grid-template-columns: 1fr; } }
+      @media (max-width: 960px) { .topbar, .page-header, .layout, .field-grid, .method-grid { grid-template-columns: 1fr; } .layout { display: grid; } .field-wide { grid-column: auto; } .summary-grid { grid-template-columns: 1fr; } .sort-toolbar { align-items: stretch; flex-direction: column; } .sort-actions { justify-content: flex-start; } }
+      @media (max-width: 560px) { .sort-actions, .sort-options { width: 100%; } button.sort-option { flex: 1; } button.sort-direction { width: 100%; } }
     </style>
   </head>
   <body>
@@ -163,6 +176,21 @@
               <div class="summary-item"><div class="summary-label">文件总数</div><div class="summary-value" id="fileCount">0</div></div>
               <div class="summary-item"><div class="summary-label">文件总大小</div><div class="summary-value" id="totalSize">0 B</div></div>
             </div>
+
+            <div class="sort-toolbar" aria-label="文件排序工具栏">
+              <div class="sort-copy">
+                <div class="sort-title">文件排序</div>
+                <div class="sort-hint" id="sortHint">完成统计后，可以按路径、大小或时间切换排序。</div>
+              </div>
+              <div class="sort-actions">
+                <div class="sort-options" role="group" aria-label="选择排序字段">
+                  <button class="sort-option active" data-sort-key="path" type="button" disabled>文件路径</button>
+                  <button class="sort-option" data-sort-key="size" type="button" disabled>文件大小</button>
+                  <button class="sort-option" data-sort-key="time" type="button" disabled>文件时间</button>
+                </div>
+                <button class="sort-direction" id="sortDirectionBtn" type="button" disabled>A → Z</button>
+              </div>
+            </div>
           </div>
 
           <div id="results" class="stack">
@@ -182,6 +210,12 @@
       const fileCount = document.getElementById("fileCount");
       const totalSize = document.getElementById("totalSize");
       const results = document.getElementById("results");
+      const sortHint = document.getElementById("sortHint");
+      const sortDirectionBtn = document.getElementById("sortDirectionBtn");
+      const sortOptionButtons = Array.from(document.querySelectorAll("[data-sort-key]"));
+      const sortState = { key: "path", direction: "asc" };
+      let currentResultData = null;
+      let currentScanTimeText = "尚未统计";
 
       function escapeHtml(value) {
         return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -193,6 +227,80 @@
         if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
         if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
         return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
+      }
+
+      function parseFileTime(value) {
+        const text = String(value || "").trim();
+        if (!text || text === "-") return null;
+        const normalized = text.replace(/^(\d{4})-(\d{2})-(\d{2})\s/, "$1/$2/$3 ");
+        const timestamp = Date.parse(normalized);
+        return Number.isNaN(timestamp) ? null : timestamp;
+      }
+
+      function filePathValue(file) {
+        return String(file.relative_path || file.full_path || "");
+      }
+
+      function sortFiles(files) {
+        const direction = sortState.direction === "asc" ? 1 : -1;
+        return (files || []).slice().sort((left, right) => {
+          let compared = 0;
+          if (sortState.key === "size") {
+            compared = Number(left.size || 0) - Number(right.size || 0);
+          } else if (sortState.key === "time") {
+            const leftTime = parseFileTime(left.created_at);
+            const rightTime = parseFileTime(right.created_at);
+            if (leftTime === null && rightTime !== null) return 1;
+            if (leftTime !== null && rightTime === null) return -1;
+            compared = Number(leftTime || 0) - Number(rightTime || 0);
+          } else {
+            compared = filePathValue(left).localeCompare(filePathValue(right), "zh-CN", { numeric: true });
+          }
+
+          if (compared !== 0) return compared * direction;
+          return filePathValue(left).localeCompare(filePathValue(right), "zh-CN", { numeric: true });
+        });
+      }
+
+      function getSortPresentation() {
+        if (sortState.key === "size") {
+          return sortState.direction === "asc"
+            ? { label: "文件大小", direction: "小 → 大", indicator: "↑" }
+            : { label: "文件大小", direction: "大 → 小", indicator: "↓" };
+        }
+        if (sortState.key === "time") {
+          return sortState.direction === "asc"
+            ? { label: "文件时间", direction: "旧 → 新", indicator: "↑" }
+            : { label: "文件时间", direction: "新 → 旧", indicator: "↓" };
+        }
+        return sortState.direction === "asc"
+          ? { label: "文件路径", direction: "A → Z", indicator: "↑" }
+          : { label: "文件路径", direction: "Z → A", indicator: "↓" };
+      }
+
+      function updateSortControls() {
+        const hasFiles = Boolean(currentResultData && (currentResultData.results || []).some(group => (group.files || []).length));
+        const presentation = getSortPresentation();
+        sortOptionButtons.forEach(button => {
+          const active = button.dataset.sortKey === sortState.key;
+          button.classList.toggle("active", active);
+          button.setAttribute("aria-pressed", active ? "true" : "false");
+          button.disabled = !hasFiles;
+        });
+        sortDirectionBtn.disabled = !hasFiles;
+        sortDirectionBtn.textContent = presentation.direction;
+        sortHint.textContent = hasFiles
+          ? `当前：按${presentation.label}排序（${presentation.direction}）。每个路径内独立排序。`
+          : "完成统计后，可以按路径、大小或时间切换排序。";
+      }
+
+      function sortedHeader(label, key) {
+        const active = sortState.key === key;
+        const presentation = getSortPresentation();
+        const className = active ? " class=\"sorted-column\"" : "";
+        const ariaSort = active ? (sortState.direction === "asc" ? "ascending" : "descending") : "none";
+        const indicator = active ? `<span class="sort-indicator">${presentation.indicator}</span>` : "";
+        return `<th${className} aria-sort="${ariaSort}">${label}${indicator}</th>`;
       }
 
       function isPlaceholderPath(value) {
@@ -344,12 +452,15 @@
         selectedMeta.textContent = `当前路径行：${rows.length} / 已保存路径输入：${savedCount} / 浏览器授权目录：${selectedCount}`;
       }
 
-      function renderResults(data) {
+      function renderResults(data, updateScanTime = true) {
+        currentResultData = data;
         const groups = data.results || [];
         pathCount.textContent = String(groups.length || 0);
         fileCount.textContent = String(data.total_files || 0);
         totalSize.textContent = formatBytes(data.total_size || 0);
-        scanMeta.textContent = `统计时间：${new Date().toLocaleString()}`;
+        if (updateScanTime) currentScanTimeText = `统计时间：${new Date().toLocaleString()}`;
+        scanMeta.textContent = currentScanTimeText;
+        updateSortControls();
 
         if (!groups.length) {
           results.innerHTML = "<div class='card empty'>没有符合后缀条件的文件。</div>";
@@ -360,7 +471,7 @@
           const errors = (group.errors || []).length
             ? `<ul class="error-list">${group.errors.map(error => `<li>${escapeHtml(error)}</li>`).join("")}</ul>`
             : "";
-          const rows = (group.files || []).map(file => `
+          const rows = sortFiles(group.files || []).map(file => `
             <tr>
               <td class="mono">${escapeHtml(file.relative_path || file.full_path)}</td>
               <td class="mono">${escapeHtml(file.md5)}</td>
@@ -370,7 +481,7 @@
             </tr>
           `).join("");
           const body = rows
-            ? `<div class="table-wrap"><table><thead><tr><th>文件路径</th><th>MD5</th><th>大小</th><th>时间</th><th>时间来源</th></tr></thead><tbody>${rows}</tbody></table></div>`
+            ? `<div class="table-wrap"><table><thead><tr>${sortedHeader("文件路径", "path")}<th>MD5</th>${sortedHeader("大小", "size")}${sortedHeader("时间", "time")}<th>时间来源</th></tr></thead><tbody>${rows}</tbody></table></div>`
             : "<div class='empty'>该路径下没有符合后缀条件的文件。</div>";
           return `<div class="result-group"><div class="result-group-header"><div class="path-title">${escapeHtml(group.path || "本地路径")}</div><div class="meta">文件数：${group.total_files || 0} / 总大小：${formatBytes(group.total_size || 0)}</div></div>${errors}${body}</div>`;
         }).join("");
@@ -543,6 +654,24 @@
         setPathRows([]);
       }
 
+      sortOptionButtons.forEach(button => {
+        button.addEventListener("click", () => {
+          const nextKey = button.dataset.sortKey;
+          if (!currentResultData || nextKey === sortState.key) return;
+          sortState.key = nextKey;
+          sortState.direction = nextKey === "path" ? "asc" : "desc";
+          renderResults(currentResultData, false);
+          statusText.textContent = `排序已切换：${getSortPresentation().label}（${getSortPresentation().direction}）。`;
+        });
+      });
+
+      sortDirectionBtn.addEventListener("click", () => {
+        if (!currentResultData) return;
+        sortState.direction = sortState.direction === "asc" ? "desc" : "asc";
+        renderResults(currentResultData, false);
+        statusText.textContent = `排序方向已切换：${getSortPresentation().label}（${getSortPresentation().direction}）。`;
+      });
+
       document.getElementById("addPathBtn").addEventListener("click", () => {
         addPathRow("");
         updateSelectedMeta();
@@ -570,6 +699,9 @@
         }
 
         statusText.textContent = `正在统计：手动路径 ${manualPaths.length} 个，浏览器选择目录 ${selectedDirectoryRows.length} 个，请稍候...`;
+        currentResultData = null;
+        currentScanTimeText = "正在统计";
+        updateSortControls();
         results.innerHTML = "<div class='card empty'>正在统计 MD5...</div>";
 
         try {

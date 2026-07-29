@@ -19,6 +19,8 @@
 | `batchetl1_tmp` | `db_pbatchetl001db_1_tmp.sql` | `outbound` | `pbatchetl001db` | `batchetl01_tmp_execute_sql.txt` |
 | `batchetl2_tmp` | `db_pbatchetl001db_2_tmp.sql` | `outbound` | `pbatchetl001db` | `batchetl02_tmp_execute_sql.txt` |
 | `data1_tmp` | `db_pdata001db_1_tmp.sql` | `outbound` | `pdata001db` | `data01_tmp_execute_sql.txt` |
+| `pmigrel88` | `db_pmigrel00ldb_88.sql` | 当前环境 `db_user` | `pmighis001db` | `pmigrel00ldb88_execute_sql.txt` |
+| `pmigrel98` | `db_pmigrel00ldb_98.sql` | 当前环境 `db_user` | `pmighis001db` | `pmigrel00ldb98_execute_sql.txt` |
 | `batchetl1` | `db_pbatchetl001db_1.sql` | `outbound` | `pbatchetl001db` | `batchetl01_execute_sql.txt` |
 | `batchetl2` | `db_pbatchetl001db_2.sql` | `outbound` | `pbatchetl001db` | `batchetl02_execute_sql.txt` |
 | `batchetl3` | `db_pbatchetl001db_3.sql` | `outbound` | `pbatchetl001db` | `batchetl03_execute_sql.txt` |
@@ -35,13 +37,17 @@
 
 SQL 项统一使用 `/pgsoft/pg14.7/bin/psql -h localhost -p 5432`，并通过 `&>> ./log/<文件名>` 同时记录标准输出和错误输出。
 
+例外：`pmigrel88` 和 `pmigrel98` 使用当前环境的 `db_host`、`db_port`、`db_user`、`db_password` 连接远程数据库 `pmighis001db`。密码通过命令级 `PGPASSWORD` 传入，不得写入系统日志或操作日志，脚本预览中必须显示为 `******`。两个 SQL 必须使用独立日志。
+
 除非明确调整产品执行顺序，否则保持 `SCRIPT_ORDER`：
 
 ```text
-batchetl1_tmp, batchetl2_tmp, data1_tmp,
+batchetl1_tmp, batchetl2_tmp, data1_tmp, pmigrel88, pmigrel98,
 batchetl1, batchetl2, batchetl3, batchetl4,
 data, other, pub, history, grant, install01, install02, mainnf, test
 ```
+
+每个环境可以保存最多 30 个自定义常规 SQL。每项包含唯一 ID、根目录 SQL 文件名、远程 PG 地址和端口、目标数据库、PG 账户、PG 密码和独立日志文件名。脚本使用命令级 `PGPASSWORD` 连接配置的远程 PG，在内置常规 SQL 之后、测试选项之前按保存顺序写入。密码不得写入系统日志或操作日志，脚本预览必须脱敏为 `******`。SQL 文件名和日志文件名不能与内置项或同环境其他自定义项重复；SQL 必须以 `.sql` 结尾，日志必须以 `.txt` 结尾，并且都不能包含目录路径。
 
 ## 生成脚本约定
 
@@ -69,6 +75,8 @@ mkdir -p ./log ./log/history
 
 上传前突出显示待上传数量；完成后返回真实成功数量，并弹窗提示成功或失败。
 
+上传成功后必须清空浏览器目录选择，并把“当前选择文件数（待上传）”重置为 `0`；上传失败时保留原选择和数量，方便用户直接重试。用户重新选择目录后，再展示新目录的待上传文件数。
+
 清理前必须弹窗展示当前环境和完整远程路径。递归删除远程目录内容，但保留顶层 `log` 目录，因此 `log/history`、当前日志和历史日志都会保留。完成后展示删除条目数量。
 
 ## 远程执行和日志
@@ -94,7 +102,7 @@ cd <安全引用后的 remote_dir> && bash <安全引用后的 ./script_name>
 
 ## 环境配置
 
-支持 `T2`、`Sit1`、`zsc` 等自定义环境名。保存主机、端口、用户、明文密码、远程目录、脚本名称和默认本地目录。页面支持显示/隐藏密码。连接成功显示绿色，失败显示红色。
+支持 `T2`、`Sit1`、`zsc` 等自定义环境名。保存 SSH 主机、端口、用户、明文密码、远程目录、脚本名称、默认本地目录，迁移数据库主机、端口、用户和明文密码，以及当前环境的自定义常规 SQL。页面支持分别显示/隐藏两个密码。连接成功显示绿色，失败显示红色。
 
 上传、清理、生成、执行、远程目录、脚本预览和当前/历史日志统一使用当前活动环境。远程 MD5 配置保持独立，但可以首次从发布环境初始化。
 
@@ -119,3 +127,6 @@ cd <安全引用后的 remote_dir> && bash <安全引用后的 ./script_name>
 - 输入框已有绝对路径时，浏览器选择目录不能把它覆盖掉。
 - 结果按照路径分组，不同路径标题使用不同颜色。
 - 文件表格区域大约展示 10 行，更多内容通过滚动查看。
+- 统计完成后支持在页面切换按文件路径、文件大小或文件时间排序。
+- 文件大小支持“大到小”和“小到大”，文件时间支持“新到旧”和“旧到新”。
+- 多个路径分组分别排序，不能把不同路径的文件混在一起。

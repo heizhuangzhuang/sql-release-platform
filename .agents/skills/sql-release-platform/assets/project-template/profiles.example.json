@@ -9,7 +9,23 @@
       "ssh_password": "your_password",
       "remote_dir": "/opt/upload",
       "script_name": "224.sh",
-      "default_local_dir": ""
+      "default_local_dir": "",
+      "db_host": "10.10.10.88",
+      "db_port": 5432,
+      "db_user": "outbound",
+      "db_password": "your_database_password",
+      "custom_sql_options": [
+        {
+          "id": "example001",
+          "sql_file": "db_new001db.sql",
+          "database": "pnew001db",
+          "pg_host": "10.10.10.88",
+          "pg_port": 5432,
+          "db_user": "outbound",
+          "db_password": "your_custom_database_password",
+          "log_file": "new001db_execute_sql.txt"
+        }
+      ]
     }
   ]
 }

@@ -313,6 +313,28 @@
         grid-column: 1 / -1;
       }
 
+      .config-subsection {
+        grid-column: 1 / -1;
+        margin-top: 4px;
+        padding: 12px 14px;
+        border: 1px solid #bfdbfe;
+        border-radius: var(--radius);
+        background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+      }
+
+      .config-subsection-title {
+        color: #1d4ed8;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .config-subsection-desc {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
       .field {
         display: grid;
         gap: 6px;
@@ -368,6 +390,13 @@
       button:active {
         transform: translateY(0);
         box-shadow: 0 6px 14px rgba(15, 118, 110, 0.16);
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.62;
+        transform: none;
+        box-shadow: none;
       }
 
       button:focus-visible,
@@ -631,6 +660,99 @@
         border-color: #f97316;
         background: #ffedd5;
         box-shadow: inset 4px 0 0 #f97316, 0 10px 22px rgba(249, 115, 22, 0.13);
+      }
+
+      .script-option.remote-database .script-option-body {
+        border-color: #bfdbfe;
+        background: #eff6ff;
+      }
+
+      .script-option.remote-database input:checked + .script-option-body {
+        border-color: #2563eb;
+        background: #dbeafe;
+        box-shadow: inset 4px 0 0 #2563eb, 0 10px 22px rgba(37, 99, 235, 0.13);
+      }
+
+      .custom-sql-manager {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid #99d5ce;
+        border-radius: var(--radius);
+        background: linear-gradient(135deg, #f0fdfa 0%, #f8fafc 100%);
+      }
+
+      .custom-sql-manager-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .custom-sql-manager-title {
+        color: var(--accent-strong);
+        font-size: 14px;
+        font-weight: 850;
+      }
+
+      .custom-sql-manager-desc,
+      .custom-sql-empty {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .custom-sql-form {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        align-items: end;
+      }
+
+      .custom-sql-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .custom-sql-empty {
+        padding: 10px 12px;
+        border: 1px dashed #99d5ce;
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .custom-option-card {
+        position: relative;
+        min-width: 0;
+      }
+
+      .custom-option-card .script-option-body {
+        padding-right: 76px;
+        border-color: #99d5ce;
+        background: #f0fdfa;
+      }
+
+      .custom-option-delete {
+        position: absolute;
+        z-index: 2;
+        top: 9px;
+        right: 9px;
+        min-height: 28px;
+        padding: 4px 8px;
+        border-color: #fecaca;
+        background: #fff;
+        color: var(--danger);
+        font-size: 12px;
+        box-shadow: none;
+      }
+
+      .custom-option-delete:hover {
+        border-color: #f87171;
+        background: #fef2f2;
+        box-shadow: none;
       }
 
       .script-option-title {
@@ -1030,6 +1152,10 @@
         .options-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
+
+        .custom-sql-form {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
       }
 
       @media (max-width: 720px) {
@@ -1041,7 +1167,8 @@
         .field-grid,
         .summary-grid,
         .options-grid,
-        .generator-stats {
+        .generator-stats,
+        .custom-sql-form {
           grid-template-columns: 1fr;
         }
 
@@ -1157,7 +1284,7 @@
               </div>
               <div class="field">
                 <label for="sshHost">SSH_HOST</label>
-                <input id="sshHost" type="text" placeholder="20.240.39.56" />
+                <input id="sshHost" type="text" placeholder="192.0.2.10" />
               </div>
               <div class="field">
                 <label for="sshPort">SSH_PORT</label>
@@ -1185,6 +1312,29 @@
               <div class="field field-wide">
                 <label for="defaultLocalDir">默认本地目录（操作提示）</label>
                 <input id="defaultLocalDir" type="text" placeholder="例如 /path/to/sql_package" />
+              </div>
+              <div class="config-subsection">
+                <div class="config-subsection-title">迁移数据库连接</div>
+                <div class="config-subsection-desc">仅供 db_pmigrel00ldb_88.sql 和 db_pmigrel00ldb_98.sql 使用；其他 SQL 仍连接 Linux 本机数据库。</div>
+              </div>
+              <div class="field">
+                <label for="dbHost">数据库 IP / 主机名</label>
+                <input id="dbHost" type="text" placeholder="例如 10.10.10.88" />
+              </div>
+              <div class="field">
+                <label for="dbPort">数据库端口</label>
+                <input id="dbPort" type="number" min="1" max="65535" value="5432" />
+              </div>
+              <div class="field">
+                <label for="dbUser">数据库用户</label>
+                <input id="dbUser" type="text" placeholder="例如 outbound" />
+              </div>
+              <div class="field">
+                <label for="dbPassword">数据库密码</label>
+                <div class="password-row">
+                  <input id="dbPassword" type="password" placeholder="迁移数据库密码" />
+                  <button type="button" class="ghost" id="toggleDbPasswordBtn">显示密码</button>
+                </div>
               </div>
             </div>
             <div class="row">
@@ -1250,11 +1400,85 @@
             <div class="option-section">
               <div class="option-section-header">
                 <div>
+                  <div class="option-section-title">远程迁移 SQL</div>
+                  <div class="option-section-desc">连接环境配置中的远程数据库，共用 pmighis001db，分别生成独立日志。</div>
+                </div>
+                <span class="badge">REMOTE DB</span>
+              </div>
+              <div class="options-grid">
+                <label class="script-option remote-database">
+                  <input type="checkbox" name="opt" value="pmigrel88" data-group="remote-db" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">db_pmigrel00ldb_88.sql</span>
+                    <span class="script-option-meta">数据库 pmighis001db，日志 pmigrel00ldb88_execute_sql.txt</span>
+                  </span>
+                </label>
+                <label class="script-option remote-database">
+                  <input type="checkbox" name="opt" value="pmigrel98" data-group="remote-db" />
+                  <span class="script-option-body">
+                    <span class="script-option-title">db_pmigrel00ldb_98.sql</span>
+                    <span class="script-option-meta">数据库 pmighis001db，日志 pmigrel00ldb98_execute_sql.txt</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div class="option-section">
+              <div class="option-section-header">
+                <div>
                   <div class="option-section-title">常规 SQL</div>
-                  <div class="option-section-desc">原有正式脚本块，按固定执行顺序写入 224.sh。</div>
+                  <div class="option-section-desc">内置脚本与当前环境的自定义脚本，按固定顺序写入当前脚本。</div>
                 </div>
                 <span class="badge">NORMAL SQL</span>
               </div>
+              <div class="custom-sql-manager">
+                <div class="custom-sql-manager-header">
+                  <div>
+                    <div class="custom-sql-manager-title">新增自定义常规 SQL</div>
+                    <div class="custom-sql-manager-desc">每个 SQL 都可以配置独立的远程 PostgreSQL 地址、账户和密码；SQL 文件放在远程目录根目录。</div>
+                  </div>
+                  <span class="badge" id="customSqlEnvironmentBadge">当前环境: -</span>
+                </div>
+                <div class="custom-sql-form">
+                  <div class="field">
+                    <label for="customSqlFile">SQL 文件名</label>
+                    <input id="customSqlFile" type="text" placeholder="例如 db_new001db.sql" />
+                  </div>
+                  <div class="field">
+                    <label for="customSqlDatabase">目标数据库</label>
+                    <input id="customSqlDatabase" type="text" placeholder="例如 pnew001db" />
+                  </div>
+                  <div class="field">
+                    <label for="customSqlHost">PG 地址 / IP</label>
+                    <input id="customSqlHost" type="text" placeholder="例如 10.10.10.88" />
+                  </div>
+                  <div class="field">
+                    <label for="customSqlPort">PG 端口</label>
+                    <input id="customSqlPort" type="number" min="1" max="65535" value="5432" />
+                  </div>
+                  <div class="field">
+                    <label for="customSqlUser">PG 账户</label>
+                    <input id="customSqlUser" type="text" placeholder="例如 outbound" />
+                  </div>
+                  <div class="field">
+                    <label for="customSqlPassword">PG 密码</label>
+                    <div class="password-row">
+                      <input id="customSqlPassword" type="password" placeholder="远程 PG 密码" />
+                      <button class="ghost" id="toggleCustomSqlPasswordBtn" type="button">显示密码</button>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="customSqlLogFile">独立日志文件</label>
+                    <input id="customSqlLogFile" type="text" placeholder="不填则根据 SQL 文件名生成" />
+                  </div>
+                </div>
+                <div class="custom-sql-actions">
+                  <button class="secondary" id="addCustomSqlBtn" type="button">加入常规 SQL</button>
+                  <span class="custom-sql-manager-desc">保存后刷新页面仍然存在；最多配置 30 个。</span>
+                </div>
+              </div>
+              <div id="customSqlEmpty" class="custom-sql-empty">当前环境还没有自定义常规 SQL。</div>
+              <div id="customSqlOptionsGrid" class="options-grid"></div>
               <div class="options-grid">
                 <label class="script-option">
                   <input type="checkbox" name="opt" value="batchetl1" />
@@ -1507,6 +1731,10 @@
       const appLogTabBtn = document.getElementById("appLogTabBtn");
       const opsLogTabBtn = document.getElementById("opsLogTabBtn");
       const fileInput = document.getElementById("file");
+      const customSqlEnvironmentBadge = document.getElementById("customSqlEnvironmentBadge");
+      const customSqlEmpty = document.getElementById("customSqlEmpty");
+      const customSqlOptionsGrid = document.getElementById("customSqlOptionsGrid");
+      const addCustomSqlBtn = document.getElementById("addCustomSqlBtn");
       let profileState = { active: "", profiles: [] };
       let scriptVisible = false;
       let runtimeLogsVisible = true;
@@ -1538,10 +1766,11 @@
         dialogMask.classList.remove("show");
       }
 
-      function showConfirmDialog(title, message, onConfirm) {
+      function showConfirmDialog(title, message, onConfirm, confirmText) {
         confirmDialog.classList.add("warning");
         confirmDialogTitle.textContent = title;
         confirmDialogBody.textContent = message || "";
+        document.getElementById("confirmDialogBtn").textContent = confirmText || "确认操作";
         pendingConfirmAction = onConfirm;
         confirmDialogMask.classList.add("show");
       }
@@ -1590,6 +1819,12 @@
         const fileCount = Number(count || 0);
         selectedFileCount.textContent = String(fileCount);
         uploadPendingCard.classList.toggle("has-files", fileCount > 0);
+      }
+
+      function resetUploadedFileSelection() {
+        // 类比 Java Web 上传完成后清空表单字段：只在后端确认成功后重置，失败时保留文件方便重试。
+        fileInput.value = "";
+        updateSelectedFileCount(0);
       }
 
       function escapeHtml(value) {
@@ -1699,15 +1934,24 @@
       }
 
       function profileFormData() {
+        const formProfileName = document.getElementById("profileName").value.trim();
+        const selectedProfileName = document.getElementById("profileSelect").value;
+        const sourceProfile = profileState.profiles.find(item => item.name === formProfileName)
+          || profileState.profiles.find(item => item.name === selectedProfileName);
         return {
-          name: document.getElementById("profileName").value.trim(),
+          name: formProfileName,
           ssh_host: document.getElementById("sshHost").value.trim(),
           ssh_port: Number(document.getElementById("sshPort").value || 22),
           ssh_user: document.getElementById("sshUser").value.trim(),
           ssh_password: document.getElementById("sshPassword").value,
           remote_dir: document.getElementById("remoteDir").value.trim(),
           script_name: document.getElementById("scriptName").value.trim() || "224.sh",
-          default_local_dir: document.getElementById("defaultLocalDir").value.trim()
+          default_local_dir: document.getElementById("defaultLocalDir").value.trim(),
+          db_host: document.getElementById("dbHost").value.trim(),
+          db_port: Number(document.getElementById("dbPort").value || 5432),
+          db_user: document.getElementById("dbUser").value.trim(),
+          db_password: document.getElementById("dbPassword").value,
+          custom_sql_options: sourceProfile ? (sourceProfile.custom_sql_options || []) : []
         };
       }
 
@@ -1732,6 +1976,12 @@
         document.getElementById("remoteDir").value = profile.remote_dir || "";
         document.getElementById("scriptName").value = profile.script_name || "224.sh";
         document.getElementById("defaultLocalDir").value = profile.default_local_dir || "";
+        document.getElementById("dbHost").value = profile.db_host || "";
+        document.getElementById("dbPort").value = profile.db_port || 5432;
+        document.getElementById("dbUser").value = profile.db_user || "";
+        document.getElementById("dbPassword").value = profile.db_password || "";
+        document.getElementById("dbPassword").type = "password";
+        document.getElementById("toggleDbPasswordBtn").textContent = "显示密码";
         renderDefaultLocalDirHint(profile.default_local_dir || "");
       }
 
@@ -1750,6 +2000,57 @@
         activeProfileBadge.textContent = `当前环境: ${profileState.active || "-"}`;
       }
 
+      function getActiveProfile() {
+        return profileState.profiles.find(item => item.name === profileState.active) || null;
+      }
+
+      function renderCustomSqlOptions() {
+        const activeProfile = getActiveProfile();
+        const customOptions = activeProfile ? (activeProfile.custom_sql_options || []) : [];
+        customSqlEnvironmentBadge.textContent = `当前环境: ${profileState.active || "-"}`;
+        customSqlEmpty.style.display = customOptions.length ? "none" : "block";
+        customSqlOptionsGrid.innerHTML = customOptions.map(option => `
+          <div class="custom-option-card">
+            <label class="script-option">
+              <input type="checkbox" name="opt" value="custom:${escapeHtml(option.id)}" data-group="custom" />
+              <span class="script-option-body">
+                <span class="script-option-title">${escapeHtml(option.sql_file)}</span>
+                <span class="script-option-meta">PG ${escapeHtml(option.pg_host || "localhost")}:${escapeHtml(option.pg_port || 5432)}</span>
+                <span class="script-option-meta">数据库 ${escapeHtml(option.database)} / 账户 ${escapeHtml(option.db_user)}</span>
+                <span class="script-option-meta">日志 ${escapeHtml(option.log_file)}</span>
+              </span>
+            </label>
+            <button class="custom-option-delete" type="button" data-custom-delete="${escapeHtml(option.id)}">删除</button>
+          </div>
+        `).join("");
+
+        customSqlOptionsGrid.querySelectorAll("input[name='opt']").forEach(input => {
+          input.addEventListener("change", updateSelectedOptionCount);
+        });
+        customSqlOptionsGrid.querySelectorAll("button[data-custom-delete]").forEach(button => {
+          button.addEventListener("click", () => {
+            const option = customOptions.find(item => item.id === button.dataset.customDelete);
+            if (!option) {
+              return;
+            }
+            showConfirmDialog(
+              "确认删除自定义 SQL",
+              `当前环境：${profileState.active}\n\nSQL 文件：${option.sql_file}\nPG 地址：${option.pg_host || "localhost"}:${option.pg_port || 5432}\n目标数据库：${option.database}\nPG 账户：${option.db_user}\n日志文件：${option.log_file}\n\n删除配置不会删除远程 SQL 文件和已有日志。`,
+              async () => {
+                const res = await fetch(`/custom-sql-options/${encodeURIComponent(option.id)}`, { method: "DELETE" });
+                const result = await parseActionResponse(res, "删除成功", "删除失败");
+                if (result.ok) {
+                  await loadProfiles(profileState.active);
+                  updateSelectedOptionCount();
+                  await loadSystemLogs("operations.log");
+                }
+              },
+              "确认删除"
+            );
+          });
+        });
+      }
+
       async function loadProfiles(selectedName) {
         const res = await fetch("/config-profiles");
         const data = await res.json();
@@ -1761,6 +2062,7 @@
         const targetName = selectedName || profileState.active;
         const profile = profileState.profiles.find(item => item.name === targetName) || profileState.profiles[0];
         fillProfileForm(profile);
+        renderCustomSqlOptions();
       }
 
       async function loadScriptPreview() {
@@ -1800,15 +2102,17 @@
         const res = await fetch("/remote-summary");
         const data = await res.json();
         if (!res.ok || data.ok === false) {
-          remoteDirSummary.textContent = data.message || "读取失败";
+          const message = data.message || "读取远程目录失败";
+          remoteDirSummary.textContent = message;
           remoteFileCount.textContent = "-";
           remoteEntryCount.textContent = "-";
-          remoteEntryList.innerHTML = `<div class='remote-entry-empty'>${escapeHtml(data.message || "读取远程目录失败")}</div>`;
-          return;
+          remoteEntryList.innerHTML = `<div class='remote-entry-empty'>${escapeHtml(message)}</div>`;
+          return { ok: false, message };
         }
         remoteDirSummary.textContent = data.remote_dir || "-";
         remoteFileCount.textContent = String(data.total_files || 0);
         renderRemoteEntries(data.entries || []);
+        return { ok: true, data };
       }
 
       function setSystemLogTab(logName) {
@@ -1872,6 +2176,7 @@
           const result = await parseActionResponse(res, "上传成功", "上传失败");
           if (result.ok) {
             lastUploadedCount.textContent = String((result.data || {}).uploaded_files || 0);
+            resetUploadedFileSelection();
             await loadRemoteSummary();
           }
         } catch (error) {
@@ -1905,7 +2210,8 @@
               setStatus(`清除目录失败：${message}`);
               showDialog("清除失败", `清除目录时发生异常：\n${message}`);
             }
-          }
+          },
+          "确认清除"
         );
       });
 
@@ -1974,6 +2280,80 @@
         } else {
           input.type = "password";
           btn.textContent = "显示密码";
+        }
+      });
+
+      document.getElementById("toggleDbPasswordBtn").addEventListener("click", () => {
+        const input = document.getElementById("dbPassword");
+        const btn = document.getElementById("toggleDbPasswordBtn");
+        if (input.type === "password") {
+          input.type = "text";
+          btn.textContent = "隐藏密码";
+        } else {
+          input.type = "password";
+          btn.textContent = "显示密码";
+        }
+      });
+
+      document.getElementById("toggleCustomSqlPasswordBtn").addEventListener("click", () => {
+        const input = document.getElementById("customSqlPassword");
+        const btn = document.getElementById("toggleCustomSqlPasswordBtn");
+        if (input.type === "password") {
+          input.type = "text";
+          btn.textContent = "隐藏密码";
+        } else {
+          input.type = "password";
+          btn.textContent = "显示密码";
+        }
+      });
+
+      addCustomSqlBtn.addEventListener("click", async () => {
+        const payload = {
+          sql_file: document.getElementById("customSqlFile").value.trim(),
+          database: document.getElementById("customSqlDatabase").value.trim(),
+          pg_host: document.getElementById("customSqlHost").value.trim(),
+          pg_port: Number(document.getElementById("customSqlPort").value || 5432),
+          db_user: document.getElementById("customSqlUser").value.trim(),
+          db_password: document.getElementById("customSqlPassword").value,
+          log_file: document.getElementById("customSqlLogFile").value.trim()
+        };
+        if (!payload.sql_file || !payload.database || !payload.pg_host || !payload.db_user || !payload.db_password) {
+          showDialog("新增失败", "请填写 SQL 文件名、目标数据库、PG 地址、PG 账户和 PG 密码。日志文件名可以留空自动生成。");
+          return;
+        }
+
+        const originalText = addCustomSqlBtn.textContent;
+        addCustomSqlBtn.disabled = true;
+        addCustomSqlBtn.textContent = "正在加入...";
+        try {
+          const res = await fetch("/custom-sql-options", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const result = await parseActionResponse(res, "新增成功", "新增失败");
+          if (result.ok) {
+            document.getElementById("customSqlFile").value = "";
+            document.getElementById("customSqlDatabase").value = "";
+            document.getElementById("customSqlHost").value = "";
+            document.getElementById("customSqlPort").value = "5432";
+            document.getElementById("customSqlUser").value = "";
+            document.getElementById("customSqlPassword").value = "";
+            document.getElementById("customSqlPassword").type = "password";
+            document.getElementById("toggleCustomSqlPasswordBtn").textContent = "显示密码";
+            document.getElementById("customSqlLogFile").value = "";
+            await loadProfiles(profileState.active);
+            updateSelectedOptionCount();
+            await loadSystemLogs("operations.log");
+          }
+        } catch (error) {
+          console.error("新增自定义 SQL 请求异常", error);
+          const message = error && error.message ? error.message : "前端请求异常，请查看浏览器控制台或后台日志";
+          setStatus(`新增自定义 SQL 失败：${message}`);
+          showDialog("新增失败", message);
+        } finally {
+          addCustomSqlBtn.disabled = false;
+          addCustomSqlBtn.textContent = originalText;
         }
       });
 
@@ -2075,15 +2455,29 @@
         await loadLogs();
       });
       refreshRemoteSummaryBtn.addEventListener("click", async () => {
+        const originalText = refreshRemoteSummaryBtn.textContent;
+        refreshRemoteSummaryBtn.disabled = true;
+        refreshRemoteSummaryBtn.textContent = "刷新中...";
         try {
           setStatus("正在刷新远程目录内容...");
-          await loadRemoteSummary();
-          setStatus("远程目录内容已刷新。");
+          const result = await loadRemoteSummary();
+          if (!result.ok) {
+            setStatus(`刷新远程目录失败：${result.message}`);
+            showDialog("刷新失败", result.message);
+            return;
+          }
+          const entryCount = ((result.data || {}).entries || []).length;
+          const message = `远程目录内容已刷新，共读取 ${entryCount} 个顶层条目。`;
+          setStatus(message);
+          showDialog("刷新成功", message);
         } catch (error) {
           console.error("刷新远程目录请求异常", error);
           const message = error && error.message ? error.message : "前端请求异常，请查看浏览器控制台或后台日志";
           setStatus(`刷新远程目录失败：${message}`);
           showDialog("刷新失败", `刷新远程目录时发生异常：\n${message}`);
+        } finally {
+          refreshRemoteSummaryBtn.disabled = false;
+          refreshRemoteSummaryBtn.textContent = originalText;
         }
       });
       currentLogTabBtn.addEventListener("click", async () => {

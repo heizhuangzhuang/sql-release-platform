@@ -4,16 +4,20 @@
 如果本地还存在旧的 .env，会自动迁移出一个 default 档案，方便平滑过渡。
 """
 
-import json
 import os
 from dataclasses import asdict
 from dataclasses import dataclass
+from dataclasses import field
+from threading import RLock
 from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
 
 from dotenv import load_dotenv
+
+from storage_utils import read_json_object
+from storage_utils import write_json_object_atomic
 
 load_dotenv()
 
@@ -32,6 +36,11 @@ class ConnectionProfile:
     remote_dir: str
     script_name: str
     default_local_dir: str = ""
+    db_host: str = ""
+    db_port: int = 5432
+    db_user: str = ""
+    db_password: Optional[str] = None
+    custom_sql_options: List[Dict[str, Any]] = field(default_factory=list)
 
     def validate(self) -> None:
         if not self.name.strip():
@@ -44,6 +53,20 @@ class ConnectionProfile:
             raise ValueError("REMOTE_DIR 不能为空")
         if not self.ssh_password:
             raise ValueError("请填写 SSH 密码")
+
+    def validate_database(self) -> None:
+        """
+        校验迁移数据库连接，类比 Java Service 在执行特定业务前做参数校验。
+        原有 SQL 仍然连接 localhost，只有远程迁移 SQL 会调用这个方法。
+        """
+        if not self.db_host.strip():
+            raise ValueError("请选择远程迁移 SQL 时，请先配置数据库 IP")
+        if self.db_port < 1 or self.db_port > 65535:
+            raise ValueError("数据库端口必须在 1 到 65535 之间")
+        if not self.db_user.strip():
+            raise ValueError("请选择远程迁移 SQL 时，请先配置数据库用户")
+        if not self.db_password:
+            raise ValueError("请选择远程迁移 SQL 时，请先配置数据库密码")
 
 
 @dataclass(frozen=True)
@@ -69,6 +92,8 @@ class ProfileStore:
     def __init__(self, file_path: str, default_script_name: str):
         self.file_path = file_path
         self.default_script_name = default_script_name
+        # FastAPI 的同步接口会在线程池中运行，锁的作用类似 Java synchronized。
+        self._lock = RLock()
 
     def _env_default_profile(self) -> ConnectionProfile:
         """
@@ -83,48 +108,53 @@ class ProfileStore:
             remote_dir=os.getenv("REMOTE_DIR", "/opt/upload"),
             script_name=os.getenv("SCRIPT_NAME", self.default_script_name),
             default_local_dir=os.getenv("DEFAULT_LOCAL_DIR", ""),
+            db_host=os.getenv("DB_HOST", ""),
+            db_port=int(os.getenv("DB_PORT", "5432")),
+            db_user=os.getenv("DB_USER", ""),
+            db_password=os.getenv("DB_PASSWORD"),
         )
 
     def _write_data(self, data: Dict[str, Any]) -> None:
-        with open(self.file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        write_json_object_atomic(self.file_path, data)
+
+    @staticmethod
+    def _profile_from_dict(item: Dict[str, Any]) -> ConnectionProfile:
+        """兼容删除 SSH_KEY_PATH 前保存的旧配置。"""
+        profile_data = dict(item)
+        profile_data.pop("ssh_key_path", None)
+        return ConnectionProfile(**profile_data)
 
     def load(self) -> Dict[str, Any]:
         """
         读取档案文件。
         如果文件不存在，则用旧 .env 初始化一个 default 档案。
         """
-        if not os.path.exists(self.file_path):
-            default_profile = self._env_default_profile()
-            data = {
-                "active": default_profile.name,
-                "profiles": [asdict(default_profile)],
-            }
-            self._write_data(data)
+        with self._lock:
+            if not os.path.exists(self.file_path):
+                default_profile = self._env_default_profile()
+                data = {
+                    "active": default_profile.name,
+                    "profiles": [asdict(default_profile)],
+                }
+                self._write_data(data)
+                return data
+
+            data = read_json_object(self.file_path)
+            if not data.get("profiles"):
+                default_profile = self._env_default_profile()
+                data = {
+                    "active": default_profile.name,
+                    "profiles": [asdict(default_profile)],
+                }
+                self._write_data(data)
             return data
-
-        with open(self.file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        if not data.get("profiles"):
-            default_profile = self._env_default_profile()
-            data = {
-                "active": default_profile.name,
-                "profiles": [asdict(default_profile)],
-            }
-            self._write_data(data)
-        return data
 
     def list_profiles(self) -> Dict[str, Any]:
         return self.load()
 
     def get_profiles(self) -> List[ConnectionProfile]:
         data = self.load()
-        profiles = []
-        for item in data.get("profiles", []):
-            item.pop("ssh_key_path", None)
-            profiles.append(ConnectionProfile(**item))
-        return profiles
+        return [self._profile_from_dict(item) for item in data.get("profiles", [])]
 
     def get_active_name(self) -> str:
         data = self.load()
@@ -134,56 +164,54 @@ class ProfileStore:
         data = self.load()
         active_name = data.get("active", "")
         for item in data.get("profiles", []):
-            item.pop("ssh_key_path", None)
             if item.get("name") == active_name:
-                return ConnectionProfile(**item)
+                return self._profile_from_dict(item)
         raise ValueError("当前没有可用的活动配置")
 
     def save_profile(self, profile: ConnectionProfile) -> None:
         profile.validate()
-        data = self.load()
-        profiles = data.get("profiles", [])
+        with self._lock:
+            data = self.load()
+            profiles = data.get("profiles", [])
 
-        updated = False
-        for index, item in enumerate(profiles):
-            if item.get("name") == profile.name:
-                profiles[index] = asdict(profile)
-                updated = True
-                break
+            updated = False
+            for index, item in enumerate(profiles):
+                if item.get("name") == profile.name:
+                    profiles[index] = asdict(profile)
+                    updated = True
+                    break
 
-        if not updated:
-            profiles.append(asdict(profile))
+            if not updated:
+                profiles.append(asdict(profile))
 
-        if not data.get("active"):
-            data["active"] = profile.name
+            if not data.get("active"):
+                data["active"] = profile.name
 
-        data["profiles"] = profiles
-        self._write_data(data)
+            data["profiles"] = profiles
+            self._write_data(data)
 
     def set_active(self, profile_name: str) -> None:
-        data = self.load()
-        exists = False
-        for item in data.get("profiles", []):
-            if item.get("name") == profile_name:
-                exists = True
-                break
-        if not exists:
-            raise ValueError("配置不存在")
-        data["active"] = profile_name
-        self._write_data(data)
+        with self._lock:
+            data = self.load()
+            exists = any(item.get("name") == profile_name for item in data.get("profiles", []))
+            if not exists:
+                raise ValueError("配置不存在")
+            data["active"] = profile_name
+            self._write_data(data)
 
     def delete_profile(self, profile_name: str) -> None:
-        data = self.load()
-        profiles = [item for item in data.get("profiles", []) if item.get("name") != profile_name]
-        if len(profiles) == len(data.get("profiles", [])):
-            raise ValueError("配置不存在")
-        if not profiles:
-            raise ValueError("至少保留一个配置")
+        with self._lock:
+            data = self.load()
+            profiles = [item for item in data.get("profiles", []) if item.get("name") != profile_name]
+            if len(profiles) == len(data.get("profiles", [])):
+                raise ValueError("配置不存在")
+            if not profiles:
+                raise ValueError("至少保留一个配置")
 
-        data["profiles"] = profiles
-        if data.get("active") == profile_name:
-            data["active"] = profiles[0]["name"]
-        self._write_data(data)
+            data["profiles"] = profiles
+            if data.get("active") == profile_name:
+                data["active"] = profiles[0]["name"]
+            self._write_data(data)
 
 
 settings = Settings()

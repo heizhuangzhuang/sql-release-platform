@@ -9,6 +9,7 @@
 import json
 import logging
 import os
+from collections import deque
 from logging.handlers import RotatingFileHandler
 from typing import Any
 from typing import Dict
@@ -18,8 +19,14 @@ LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
 APP_LOGGER_NAME = "deploy-web"
 OPERATIONS_LOGGER_NAME = "deploy-web.operations"
 EVENT_LABELS = {
+    "save_md5_remote_settings": "保存远程MD5配置",
+    "save_md5_local_settings": "保存本地MD5配置",
+    "md5_scan": "统计远程目录MD5",
+    "md5_local_scan": "统计本地目录MD5",
     "list_profiles": "读取配置列表",
     "save_profile": "保存环境配置",
+    "add_custom_sql": "新增自定义常规SQL",
+    "delete_custom_sql": "删除自定义常规SQL",
     "set_active_profile": "切换当前环境",
     "delete_profile": "删除环境配置",
     "test_connection": "测试环境连接",
@@ -85,7 +92,12 @@ def configure_logging(log_dir: str, max_bytes: int, backup_count: int) -> None:
 
     app_logger._deploy_logging_ready = True
     operations_logger._deploy_logging_ready = True
-    app_logger.info("日志模块初始化完成，日志目录=%s，单文件大小上限=%s，保留份数=%s", log_dir, max_bytes, backup_count)
+    app_logger.info(
+        "日志模块初始化完成，日志目录=%s，单文件大小上限=%s，保留份数=%s",
+        log_dir,
+        max_bytes,
+        backup_count,
+    )
 
 
 def get_app_logger() -> logging.Logger:
@@ -119,11 +131,12 @@ def tail_log_file(log_dir: str, log_name: str, lines: int) -> Dict[str, Any]:
     if not os.path.exists(file_path):
         return {"log_name": safe_name, "exists": False, "content": ""}
 
-    with open(file_path, "r", encoding="utf-8") as log_file:
-        all_lines = log_file.readlines()
+    # deque 只保留最后 N 行，日志接近滚动上限时也不会整文件加载到内存。
+    with open(file_path, "r", encoding="utf-8", errors="replace") as log_file:
+        recent_lines = deque(log_file, maxlen=max(1, lines))
 
     return {
         "log_name": safe_name,
         "exists": True,
-        "content": "".join(all_lines[-lines:]),
+        "content": "".join(recent_lines),
     }

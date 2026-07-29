@@ -12,7 +12,9 @@ import shlex
 import shutil
 import stat
 import time
+import uuid
 from datetime import datetime
+from threading import RLock
 from typing import Any
 from typing import Dict
 from typing import List
@@ -37,6 +39,8 @@ from logging_setup import configure_logging
 from logging_setup import get_app_logger
 from logging_setup import log_operation
 from logging_setup import tail_log_file
+from storage_utils import read_json_object
+from storage_utils import write_json_object_atomic
 
 
 configure_logging(settings.log_dir, settings.log_max_bytes, settings.log_backup_count)
@@ -46,10 +50,15 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 SYSTEM_LOG_LINES = 120
+REMOTE_COMMAND_LOG_LIMIT = 2000
+FILE_READ_BUFFER_SIZE = 1024 * 1024
 LOG_DIR_NAME = "log"
 LOG_HISTORY_DIR_NAME = "history"
 LOG_SKIP_DIR_NAMES = set([LOG_DIR_NAME])
 MD5_SETTINGS_FILE = "md5_settings.json"
+CUSTOM_SQL_KEY_PREFIX = "custom:"
+MAX_CUSTOM_SQL_OPTIONS = 30
+MD5_SETTINGS_LOCK = RLock()
 
 SCRIPT_BLOCKS: Dict[str, Dict[str, str]] = {
     "batchetl1_tmp": {
@@ -66,6 +75,20 @@ SCRIPT_BLOCKS: Dict[str, Dict[str, str]] = {
         "title": "db_pdata001db_1_tmp.sql",
         "log_file": "./log/data01_tmp_execute_sql.txt",
         "command": "/pgsoft/pg14.7/bin/psql -h localhost -p 5432 -U outbound -d pdata001db -f ./db_pdata001db_1_tmp.sql &>> ./log/data01_tmp_execute_sql.txt",
+    },
+    "pmigrel88": {
+        "title": "db_pmigrel00ldb_88.sql",
+        "log_file": "./log/pmigrel00ldb88_execute_sql.txt",
+        "sql_file": "db_pmigrel00ldb_88.sql",
+        "database": "pmighis001db",
+        "connection_type": "configured_database",
+    },
+    "pmigrel98": {
+        "title": "db_pmigrel00ldb_98.sql",
+        "log_file": "./log/pmigrel00ldb98_execute_sql.txt",
+        "sql_file": "db_pmigrel00ldb_98.sql",
+        "database": "pmighis001db",
+        "connection_type": "configured_database",
     },
     "batchetl1": {
         "title": "db_pbatchetl001db_1.sql",
@@ -138,6 +161,8 @@ SCRIPT_ORDER = [
     "batchetl1_tmp",
     "batchetl2_tmp",
     "data1_tmp",
+    "pmigrel88",
+    "pmigrel98",
     "batchetl1",
     "batchetl2",
     "batchetl3",
@@ -160,7 +185,7 @@ def _get_active_profile() -> ConnectionProfile:
 
 def _profile_summary(profile: ConnectionProfile) -> str:
     return (
-        "name={name}, host={host}, port={port}, user={user}, remote_dir={remote_dir}, script_name={script_name}, default_local_dir={default_local_dir}"
+        "name={name}, host={host}, port={port}, user={user}, remote_dir={remote_dir}, script_name={script_name}, default_local_dir={default_local_dir}, db_host={db_host}, db_port={db_port}, db_user={db_user}"
     ).format(
         name=profile.name,
         host=profile.ssh_host,
@@ -169,6 +194,9 @@ def _profile_summary(profile: ConnectionProfile) -> str:
         remote_dir=profile.remote_dir,
         script_name=profile.script_name,
         default_local_dir=profile.default_local_dir or "-",
+        db_host=profile.db_host or "-",
+        db_port=profile.db_port,
+        db_user=profile.db_user or "-",
     )
 
 
@@ -182,6 +210,11 @@ def _profile_to_dict(profile: ConnectionProfile) -> Dict[str, Any]:
         "remote_dir": profile.remote_dir,
         "script_name": profile.script_name,
         "default_local_dir": profile.default_local_dir,
+        "db_host": profile.db_host,
+        "db_port": profile.db_port,
+        "db_user": profile.db_user,
+        "db_password": profile.db_password or "",
+        "custom_sql_options": profile.custom_sql_options,
     }
 
 
@@ -319,10 +352,18 @@ def _run_remote_command(client: paramiko.SSHClient, command: str) -> Dict[str, A
     logger.info(
         "远程命令执行完成：退出码=%s，标准输出=%r，错误输出=%r",
         exit_status,
-        output,
-        error,
+        _summarize_for_log(output),
+        _summarize_for_log(error),
     )
     return {"exit_status": exit_status, "stdout": output, "stderr": error}
+
+
+def _summarize_for_log(value: str, limit: int = REMOTE_COMMAND_LOG_LIMIT) -> str:
+    """限制后台日志中的远程输出长度，完整内容仍通过接口返回。"""
+    if len(value) <= limit:
+        return value
+    omitted = len(value) - limit
+    return "%s\n...（后台日志已省略 %s 个字符）" % (value[:limit], omitted)
 
 
 def _decode_text_bytes(raw_bytes: bytes) -> str:
@@ -359,37 +400,64 @@ def _decode_base64_text(value: str) -> str:
 
 
 def _load_md5_settings() -> Dict[str, Any]:
-    if not os.path.exists(MD5_SETTINGS_FILE):
-        return {
-            "remote": {
-                "connection": {},
-                "paths": [],
-                "paths_by_profile": {},
-                "suffixes": "",
-            },
-            "local": {
-                "paths": [],
-                "suffixes": "",
-            },
-        }
+    with MD5_SETTINGS_LOCK:
+        if not os.path.exists(MD5_SETTINGS_FILE):
+            return _default_md5_settings()
 
-    with open(MD5_SETTINGS_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        data = read_json_object(MD5_SETTINGS_FILE)
+        data.setdefault("remote", {})
+        data["remote"].setdefault("connection", {})
+        data["remote"].setdefault("paths", [])
+        data["remote"].setdefault("paths_by_profile", {})
+        data["remote"].setdefault("suffixes", "")
+        data.setdefault("local", {})
+        data["local"].setdefault("paths", [])
+        data["local"].setdefault("suffixes", "")
+        return data
 
-    data.setdefault("remote", {})
-    data["remote"].setdefault("connection", {})
-    data["remote"].setdefault("paths", [])
-    data["remote"].setdefault("paths_by_profile", {})
-    data["remote"].setdefault("suffixes", "")
-    data.setdefault("local", {})
-    data["local"].setdefault("paths", [])
-    data["local"].setdefault("suffixes", "")
-    return data
+
+def _default_md5_settings() -> Dict[str, Any]:
+    return {
+        "remote": {
+            "connection": {},
+            "paths": [],
+            "paths_by_profile": {},
+            "suffixes": "",
+        },
+        "local": {
+            "paths": [],
+            "suffixes": "",
+        },
+    }
 
 
 def _write_md5_settings(data: Dict[str, Any]) -> None:
-    with open(MD5_SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    with MD5_SETTINGS_LOCK:
+        write_json_object_atomic(MD5_SETTINGS_FILE, data)
+
+
+def _update_md5_settings(section_name: str, values: Dict[str, Any]) -> Dict[str, Any]:
+    """在同一把锁内完成读取和写入，避免两个保存请求互相覆盖。"""
+    with MD5_SETTINGS_LOCK:
+        data = _load_md5_settings()
+        data[section_name].update(values)
+        _write_md5_settings(data)
+        return data
+
+
+def _normalize_unique_text_values(raw_values: Any) -> List[str]:
+    """把页面数组整理成去空白、去重复且保持原顺序的字符串列表。"""
+    if not isinstance(raw_values, list):
+        return []
+
+    values = []
+    seen = set()
+    for item in raw_values:
+        value = str(item).strip()
+        if value and value not in seen:
+            seen.add(value)
+            values.append(value)
+    return values
 
 
 def _md5_connection_from_payload(payload: Dict[str, Any], fallback_paths: List[str]) -> ConnectionProfile:
@@ -448,7 +516,7 @@ def _normalize_md5_suffixes(raw_value: Any) -> List[str]:
         suffix = suffix.lstrip("*")
         if not suffix.startswith("."):
             suffix = "." + suffix
-        if any(char in suffix for char in ('/', "\\", "'", '"', " ", "\t")):
+        if any(char in suffix for char in ("/", "\\", "'", '"', " ", "\t")):
             continue
         if suffix not in suffixes:
             suffixes.append(suffix)
@@ -472,10 +540,7 @@ def _parse_manual_local_paths(raw_value: str) -> List[str]:
 
     try:
         data = json.loads(raw_value)
-        if isinstance(data, list):
-            parts = data
-        else:
-            parts = [str(data)]
+        parts = data if isinstance(data, list) else [str(data)]
     except json.JSONDecodeError:
         parts = raw_value.replace("，", ",").replace("\n", ",").split(",")
 
@@ -492,7 +557,7 @@ def _md5_file_from_disk(file_path: str) -> Dict[str, Any]:
     size = 0
     with open(file_path, "rb") as f:
         while True:
-            chunk = f.read(1024 * 1024)
+            chunk = f.read(FILE_READ_BUFFER_SIZE)
             if not chunk:
                 break
             size += len(chunk)
@@ -561,7 +626,7 @@ def _build_find_filter(suffixes: List[str]) -> str:
 def _build_md5_scan_command(paths: List[str], suffixes: List[str]) -> str:
     path_args = " ".join(shlex.quote(path) for path in paths)
     find_filter = _build_find_filter(suffixes)
-    script = r'''
+    script = r"""
 for target in "$@"; do
   target_b64=$(printf '%s' "$target" | base64 | tr -d '\n')
   if [ ! -d "$target" ]; then
@@ -594,7 +659,7 @@ for target in "$@"; do
     printf '__FILE__\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$target_b64" "$rel_b64" "$full_b64" "$md5" "$size" "$time_b64" "$source_b64"
   done
 done
-'''
+"""
     script = script.replace("__FIND_FILTER__", find_filter)
     return "bash -lc {script} -- {paths}".format(script=shlex.quote(script), paths=path_args)
 
@@ -620,7 +685,13 @@ def _parse_md5_scan_output(output: str, paths: List[str]) -> List[Dict[str, Any]
             message = _decode_base64_text(parts[2]) or "路径读取失败"
             bucket = result_map.setdefault(
                 path,
-                {"path": path, "files": [], "errors": [], "total_files": 0, "total_size": 0},
+                {
+                    "path": path,
+                    "files": [],
+                    "errors": [],
+                    "total_files": 0,
+                    "total_size": 0,
+                },
             )
             bucket["errors"].append(message)
             continue
@@ -641,7 +712,13 @@ def _parse_md5_scan_output(output: str, paths: List[str]) -> List[Dict[str, Any]
         time_source = _decode_base64_text(parts[7]) or "创建时间"
         bucket = result_map.setdefault(
             path,
-            {"path": path, "files": [], "errors": [], "total_files": 0, "total_size": 0},
+            {
+                "path": path,
+                "files": [],
+                "errors": [],
+                "total_files": 0,
+                "total_size": 0,
+            },
         )
         bucket["files"].append(
             {
@@ -677,12 +754,199 @@ def _backup_log_lines(log_file: str) -> List[str]:
     ]
 
 
-def _build_script_block(option_key: str) -> List[str]:
+def _build_configured_database_command(block: Dict[str, str], profile: ConnectionProfile) -> str:
+    """根据当前环境生成远程数据库命令，不把数据库密码写入系统日志。"""
+    profile.validate_database()
+    return (
+        "PGPASSWORD={password} /pgsoft/pg14.7/bin/psql "
+        "-h {host} -p {port} -U {user} -d {database} -f {sql_file} &>> {log_file}"
+    ).format(
+        password=shlex.quote(profile.db_password or ""),
+        host=shlex.quote(profile.db_host),
+        port=profile.db_port,
+        user=shlex.quote(profile.db_user),
+        database=shlex.quote(block["database"]),
+        sql_file=shlex.quote("./" + block["sql_file"]),
+        log_file=shlex.quote(block["log_file"]),
+    )
+
+
+def _build_script_block(option_key: str, profile: ConnectionProfile) -> List[str]:
     block = SCRIPT_BLOCKS[option_key]
     lines = ['echo "执行%s"' % block["title"]]
     lines.extend(_backup_log_lines(block["log_file"]))
-    lines.append(block["command"])
+    if block.get("connection_type") == "configured_database":
+        lines.append(_build_configured_database_command(block, profile))
+    else:
+        lines.append(block["command"])
     return lines
+
+
+def _validate_custom_filename(value: Any, suffix: str, field_name: str) -> str:
+    filename = str(value or "").strip()
+    if not filename:
+        raise ValueError("%s不能为空" % field_name)
+    if len(filename) > 180:
+        raise ValueError("%s不能超过 180 个字符" % field_name)
+    if filename != posixpath.basename(filename) or "\\" in filename:
+        raise ValueError("%s只能填写文件名，不能包含目录路径" % field_name)
+    if "\n" in filename or "\r" in filename or "\x00" in filename:
+        raise ValueError("%s包含不允许的字符" % field_name)
+    if not filename.lower().endswith(suffix):
+        raise ValueError("%s必须以 %s 结尾" % (field_name, suffix))
+    return filename
+
+
+def _validate_custom_text(value: Any, field_name: str) -> str:
+    text_value = str(value or "").strip()
+    if not text_value:
+        raise ValueError("%s不能为空" % field_name)
+    if len(text_value) > 128:
+        raise ValueError("%s不能超过 128 个字符" % field_name)
+    if "\n" in text_value or "\r" in text_value or "\x00" in text_value:
+        raise ValueError("%s包含不允许的字符" % field_name)
+    return text_value
+
+
+def _normalize_custom_sql_option(item: Any, create_id: bool = False) -> Dict[str, Any]:
+    if not isinstance(item, dict):
+        raise ValueError("自定义 SQL 配置格式不正确")
+
+    option_id = str(item.get("id", "")).strip()
+    if create_id and not option_id:
+        option_id = uuid.uuid4().hex[:12]
+    if not option_id or len(option_id) > 40 or not option_id.replace("-", "").isalnum():
+        raise ValueError("自定义 SQL 配置 ID 不正确")
+
+    sql_file = _validate_custom_filename(item.get("sql_file"), ".sql", "SQL 文件名")
+    database = _validate_custom_text(item.get("database"), "数据库名")
+    pg_host_value = item.get("pg_host")
+    if not pg_host_value and not create_id:
+        pg_host_value = "localhost"
+    pg_host = _validate_custom_text(pg_host_value, "PG 地址")
+    try:
+        pg_port = int(item.get("pg_port", 5432))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("PG 端口必须是数字") from exc
+    if pg_port < 1 or pg_port > 65535:
+        raise ValueError("PG 端口必须在 1 到 65535 之间")
+    db_user = _validate_custom_text(item.get("db_user"), "数据库用户")
+    db_password = str(item.get("db_password", ""))
+    if create_id and not db_password:
+        raise ValueError("PG 密码不能为空")
+    if len(db_password) > 256 or "\n" in db_password or "\r" in db_password or "\x00" in db_password:
+        raise ValueError("PG 密码包含不允许的字符或长度超过 256")
+    default_log_file = "%s_execute_sql.txt" % os.path.splitext(sql_file)[0]
+    log_file = _validate_custom_filename(item.get("log_file") or default_log_file, ".txt", "日志文件名")
+    return {
+        "id": option_id,
+        "sql_file": sql_file,
+        "database": database,
+        "pg_host": pg_host,
+        "pg_port": pg_port,
+        "db_user": db_user,
+        "db_password": db_password,
+        "log_file": log_file,
+    }
+
+
+def _normalize_custom_sql_options(items: Any) -> List[Dict[str, Any]]:
+    if items is None:
+        return []
+    if not isinstance(items, list):
+        raise ValueError("自定义 SQL 配置必须是列表")
+    if len(items) > MAX_CUSTOM_SQL_OPTIONS:
+        raise ValueError("每个环境最多配置 %s 个自定义 SQL" % MAX_CUSTOM_SQL_OPTIONS)
+
+    normalized = []
+    seen_ids = set()
+    seen_sql_files = set()
+    seen_log_files = set()
+    static_sql_files = set()
+    for block in SCRIPT_BLOCKS.values():
+        if block.get("sql_file"):
+            static_sql_files.add(block["sql_file"].lower())
+        for command_part in block.get("command", "").split():
+            if command_part.startswith("./") and command_part.lower().endswith(".sql"):
+                static_sql_files.add(posixpath.basename(command_part).lower())
+    static_log_files = set(posixpath.basename(block["log_file"]).lower() for block in SCRIPT_BLOCKS.values())
+    for item in items:
+        option = _normalize_custom_sql_option(item)
+        sql_name = option["sql_file"].lower()
+        log_name = option["log_file"].lower()
+        if option["id"] in seen_ids:
+            raise ValueError("自定义 SQL 配置 ID 重复")
+        if sql_name in seen_sql_files or sql_name in static_sql_files:
+            raise ValueError("SQL 文件名已经存在: %s" % option["sql_file"])
+        if log_name in seen_log_files or log_name in static_log_files:
+            raise ValueError("日志文件名已经存在: %s" % option["log_file"])
+        seen_ids.add(option["id"])
+        seen_sql_files.add(sql_name)
+        seen_log_files.add(log_name)
+        normalized.append(option)
+    return normalized
+
+
+def _custom_sql_key(option_id: str) -> str:
+    return CUSTOM_SQL_KEY_PREFIX + option_id
+
+
+def _build_custom_script_block(option: Dict[str, Any]) -> List[str]:
+    log_path = "./%s/%s" % (LOG_DIR_NAME, option["log_file"])
+    password_prefix = ""
+    if option.get("db_password"):
+        password_prefix = "PGPASSWORD=%s " % shlex.quote(option["db_password"])
+    command = (
+        "{password_prefix}/pgsoft/pg14.7/bin/psql -h {pg_host} -p {pg_port} -U {db_user} "
+        "-d {database} -f {sql_file} &>> {log_file}"
+    ).format(
+        password_prefix=password_prefix,
+        pg_host=shlex.quote(option["pg_host"]),
+        pg_port=option["pg_port"],
+        db_user=shlex.quote(option["db_user"]),
+        database=shlex.quote(option["database"]),
+        sql_file=shlex.quote("./" + option["sql_file"]),
+        log_file=shlex.quote(log_path),
+    )
+    lines = ['echo "执行%s"' % option["sql_file"]]
+    lines.extend(_backup_log_lines(log_path))
+    lines.append(command)
+    return lines
+
+
+def _build_script_content(
+    selected: Any,
+    profile: ConnectionProfile,
+    custom_options: List[Dict[str, Any]],
+) -> str:
+    """组装完整脚本，类比 Java Service 中可独立单元测试的业务方法。"""
+    lines = [
+        "#!/usr/bin/env bash",
+        "set -e",
+        "mkdir -p ./%s ./%s/%s" % (LOG_DIR_NAME, LOG_DIR_NAME, LOG_HISTORY_DIR_NAME),
+    ]
+    for key in SCRIPT_ORDER:
+        if key == "test":
+            continue
+        if key in selected:
+            lines.extend(_build_script_block(key, profile))
+    for custom_option in custom_options:
+        if _custom_sql_key(custom_option["id"]) in selected:
+            lines.extend(_build_custom_script_block(custom_option))
+    if "test" in selected:
+        lines.extend(_build_script_block("test", profile))
+    return "\n".join(lines) + "\n"
+
+
+def _mask_database_password_in_script(content: str, profile: ConnectionProfile) -> str:
+    """脚本预览隐藏数据库密码；真实远程脚本保持可执行。"""
+    passwords = [profile.db_password]
+    passwords.extend(option.get("db_password") for option in profile.custom_sql_options)
+    for password in passwords:
+        if password:
+            password_assignment = "PGPASSWORD=%s" % shlex.quote(str(password))
+            content = content.replace(password_assignment, "PGPASSWORD='******'")
+    return content
 
 
 def _json_error(message: str, status_code: int) -> JSONResponse:
@@ -701,12 +965,12 @@ def _log_failure(event: str, reason: str, profile: ConnectionProfile = None, **k
 
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next):
-    start_time = time.time()
+    start_time = time.monotonic()
     logger.info("收到 HTTP 请求：方法=%s，请求路径=%s", request.method, request.url.path)
     try:
         response = await call_next(request)
     except Exception:
-        duration_ms = int((time.time() - start_time) * 1000)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
         logger.exception(
             "HTTP 请求处理失败：方法=%s，请求路径=%s，耗时=%s毫秒",
             request.method,
@@ -715,7 +979,7 @@ async def request_logging_middleware(request: Request, call_next):
         )
         raise
 
-    duration_ms = int((time.time() - start_time) * 1000)
+    duration_ms = int((time.monotonic() - start_time) * 1000)
     logger.info(
         "HTTP 请求处理完成：方法=%s，请求路径=%s，状态码=%s，耗时=%s毫秒",
         request.method,
@@ -756,7 +1020,7 @@ def md5_defaults():
 
     try:
         active_profile = _get_active_profile()
-    except ValueError as exc:
+    except ValueError:
         active_profile = None
 
     if not saved_connection and active_profile is not None:
@@ -799,11 +1063,7 @@ def save_md5_remote_settings(payload: Dict[str, Any] = Body(...)):
     if not isinstance(raw_paths, list):
         return _json_error("paths 必须是数组", 400)
 
-    paths = []
-    for item in raw_paths:
-        path = str(item).strip()
-        if path and path not in paths:
-            paths.append(path)
+    paths = _normalize_unique_text_values(raw_paths)
     suffixes = _normalize_md5_suffixes(payload.get("suffixes", ""))
     try:
         profile = _md5_connection_from_payload(payload, paths)
@@ -815,19 +1075,28 @@ def save_md5_remote_settings(payload: Dict[str, Any] = Body(...)):
     if not paths:
         paths = [profile.remote_dir]
 
-    settings_data = _load_md5_settings()
-    settings_data["remote"]["connection"] = {
-        "name": profile.name,
-        "ssh_host": profile.ssh_host,
-        "ssh_port": profile.ssh_port,
-        "ssh_user": profile.ssh_user,
-        "ssh_password": profile.ssh_password or "",
-        "remote_dir": profile.remote_dir,
-    }
-    settings_data["remote"]["paths"] = paths
-    settings_data["remote"]["suffixes"] = _suffixes_to_text(suffixes)
-    _write_md5_settings(settings_data)
-    log_operation("save_md5_remote_settings", True, 环境名称=profile.name, 路径数量=len(paths), 文件后缀=_suffixes_to_text(suffixes))
+    _update_md5_settings(
+        "remote",
+        {
+            "connection": {
+                "name": profile.name,
+                "ssh_host": profile.ssh_host,
+                "ssh_port": profile.ssh_port,
+                "ssh_user": profile.ssh_user,
+                "ssh_password": profile.ssh_password or "",
+                "remote_dir": profile.remote_dir,
+            },
+            "paths": paths,
+            "suffixes": _suffixes_to_text(suffixes),
+        },
+    )
+    log_operation(
+        "save_md5_remote_settings",
+        True,
+        环境名称=profile.name,
+        路径数量=len(paths),
+        文件后缀=_suffixes_to_text(suffixes),
+    )
     return {
         "ok": True,
         "message": "MD5 远程配置已保存",
@@ -851,20 +1120,27 @@ def md5_local_settings():
 def save_md5_local_settings(payload: Dict[str, Any] = Body(...)):
     suffixes = _normalize_md5_suffixes(payload.get("suffixes", ""))
     raw_paths = payload.get("paths", [])
-    if not isinstance(raw_paths, list):
-        raw_paths = []
-    paths = []
-    for item in raw_paths:
-        path = str(item).strip()
-        if path and path not in paths:
-            paths.append(path)
+    paths = _normalize_unique_text_values(raw_paths)
 
-    settings_data = _load_md5_settings()
-    settings_data["local"]["paths"] = paths
-    settings_data["local"]["suffixes"] = _suffixes_to_text(suffixes)
-    _write_md5_settings(settings_data)
-    log_operation("save_md5_local_settings", True, 路径数量=len(paths), 文件后缀=_suffixes_to_text(suffixes))
-    return {"ok": True, "message": "MD5 本地配置已保存", "paths": paths, "suffixes": _suffixes_to_text(suffixes)}
+    _update_md5_settings(
+        "local",
+        {
+            "paths": paths,
+            "suffixes": _suffixes_to_text(suffixes),
+        },
+    )
+    log_operation(
+        "save_md5_local_settings",
+        True,
+        路径数量=len(paths),
+        文件后缀=_suffixes_to_text(suffixes),
+    )
+    return {
+        "ok": True,
+        "message": "MD5 本地配置已保存",
+        "paths": paths,
+        "suffixes": _suffixes_to_text(suffixes),
+    }
 
 
 @app.post("/md5-scan")
@@ -873,11 +1149,7 @@ def md5_scan(payload: Dict[str, Any] = Body(...)):
     if not isinstance(raw_paths, list):
         return _json_error("paths 必须是数组", 400)
 
-    paths = []
-    for item in raw_paths:
-        path = str(item).strip()
-        if path and path not in paths:
-            paths.append(path)
+    paths = _normalize_unique_text_values(raw_paths)
 
     if not paths:
         return _json_error("请至少填写一个远程路径", 400)
@@ -901,7 +1173,12 @@ def md5_scan(payload: Dict[str, Any] = Body(...)):
 
     try:
         command = _build_md5_scan_command(paths, suffixes)
-        logger.info("开始执行 MD5 统计：环境=%s，路径=%s，文件后缀=%s", profile.name, ",".join(paths), _suffixes_to_text(suffixes) or "全部")
+        logger.info(
+            "开始执行 MD5 统计：环境=%s，路径=%s，文件后缀=%s",
+            profile.name,
+            ",".join(paths),
+            _suffixes_to_text(suffixes) or "全部",
+        )
         result = _run_remote_command(client, command)
     except Exception as exc:
         logger.exception("MD5 统计执行失败：%s", _profile_summary(profile))
@@ -911,7 +1188,12 @@ def md5_scan(payload: Dict[str, Any] = Body(...)):
         client.close()
 
     if result["exit_status"] != 0:
-        _log_failure("md5_scan", result["stderr"] or "远程命令执行失败", profile, 路径=",".join(paths))
+        _log_failure(
+            "md5_scan",
+            result["stderr"] or "远程命令执行失败",
+            profile,
+            路径=",".join(paths),
+        )
         return JSONResponse(
             {
                 "ok": False,
@@ -925,7 +1207,12 @@ def md5_scan(payload: Dict[str, Any] = Body(...)):
     scan_results = _parse_md5_scan_output(result["stdout"], paths)
     total_files = sum(item["total_files"] for item in scan_results)
     total_size = sum(item["total_size"] for item in scan_results)
-    logger.info("MD5 统计完成：环境=%s，路径数=%s，文件总数=%s", profile.name, len(paths), total_files)
+    logger.info(
+        "MD5 统计完成：环境=%s，路径数=%s，文件总数=%s",
+        profile.name,
+        len(paths),
+        total_files,
+    )
     log_operation(
         "md5_scan",
         True,
@@ -991,7 +1278,7 @@ def md5_local_scan(
         md5 = hashlib.md5()
         size = 0
         while True:
-            chunk = upload.file.read(1024 * 1024)
+            chunk = upload.file.read(FILE_READ_BUFFER_SIZE)
             if not chunk:
                 break
             size += len(chunk)
@@ -1014,7 +1301,14 @@ def md5_local_scan(
         total_size += size
 
     results = manual_results + [groups[name] for name in group_order]
-    log_operation("md5_local_scan", True, 路径数量=len(results), 文件总数=total_files, 文件总大小=total_size, 文件后缀=_suffixes_to_text(normalized_suffixes) or "全部")
+    log_operation(
+        "md5_local_scan",
+        True,
+        路径数量=len(results),
+        文件总数=total_files,
+        文件总大小=total_size,
+        文件后缀=_suffixes_to_text(normalized_suffixes) or "全部",
+    )
     return {
         "ok": True,
         "results": results,
@@ -1027,10 +1321,11 @@ def md5_local_scan(
 @app.get("/config-profiles")
 def list_config_profiles():
     data = profile_store.list_profiles()
-    total = len(data.get("profiles", []))
+    profiles = [_profile_to_dict(profile) for profile in profile_store.get_profiles()]
+    total = len(profiles)
     logger.info("已读取环境配置列表：当前环境=%s，配置总数=%s", data.get("active"), total)
     log_operation("list_profiles", True, 当前环境=data.get("active"), 配置总数=total)
-    return {"ok": True, "active": data.get("active"), "profiles": data.get("profiles", [])}
+    return {"ok": True, "active": data.get("active"), "profiles": profiles}
 
 
 @app.post("/config-profiles")
@@ -1045,14 +1340,100 @@ def save_config_profile(payload: Dict[str, Any] = Body(...)):
             remote_dir=str(payload.get("remote_dir", "")).strip(),
             script_name=str(payload.get("script_name", "224.sh")).strip() or "224.sh",
             default_local_dir=str(payload.get("default_local_dir", "")).strip(),
+            db_host=str(payload.get("db_host", "")).strip(),
+            db_port=int(payload.get("db_port", 5432)),
+            db_user=str(payload.get("db_user", "")).strip(),
+            db_password=str(payload.get("db_password", "")).strip() or None,
+            custom_sql_options=_normalize_custom_sql_options(payload.get("custom_sql_options", [])),
         )
         profile_store.save_profile(profile)
         logger.info("环境配置保存成功：%s", _profile_summary(profile))
         log_operation("save_profile", True, 环境名称=profile.name, 远程目录=profile.remote_dir)
-        return {"ok": True, "message": "配置已保存", "profile": _profile_to_dict(profile)}
+        return {
+            "ok": True,
+            "message": "配置已保存",
+            "profile": _profile_to_dict(profile),
+        }
     except ValueError as exc:
         _log_failure("save_profile", str(exc))
         return _json_error(str(exc), 400)
+
+
+@app.post("/custom-sql-options")
+def add_custom_sql_option(payload: Dict[str, Any] = Body(...)):
+    try:
+        profile = _get_active_profile()
+        current_options = _normalize_custom_sql_options(profile.custom_sql_options)
+        if len(current_options) >= MAX_CUSTOM_SQL_OPTIONS:
+            raise ValueError("每个环境最多配置 %s 个自定义 SQL" % MAX_CUSTOM_SQL_OPTIONS)
+        new_option = _normalize_custom_sql_option(payload, create_id=True)
+        profile.custom_sql_options = _normalize_custom_sql_options(current_options + [new_option])
+        profile_store.save_profile(profile)
+    except ValueError as exc:
+        _log_failure("add_custom_sql", str(exc))
+        return _json_error(str(exc), 400)
+
+    logger.info(
+        "自定义 SQL 新增成功：环境=%s，SQL文件=%s，PG地址=%s，PG端口=%s，数据库=%s，数据库用户=%s，日志文件=%s",
+        profile.name,
+        new_option["sql_file"],
+        new_option["pg_host"],
+        new_option["pg_port"],
+        new_option["database"],
+        new_option["db_user"],
+        new_option["log_file"],
+    )
+    log_operation(
+        "add_custom_sql",
+        True,
+        环境名称=profile.name,
+        SQL文件=new_option["sql_file"],
+        PG地址=new_option["pg_host"],
+        PG端口=new_option["pg_port"],
+        数据库=new_option["database"],
+        日志文件=new_option["log_file"],
+    )
+    return {
+        "ok": True,
+        "message": "自定义常规 SQL 已加入当前环境",
+        "profile_name": profile.name,
+        "option": new_option,
+    }
+
+
+@app.delete("/custom-sql-options/{option_id}")
+def delete_custom_sql_option(option_id: str):
+    try:
+        profile = _get_active_profile()
+        current_options = _normalize_custom_sql_options(profile.custom_sql_options)
+        target = None
+        remaining = []
+        for option in current_options:
+            if option["id"] == option_id:
+                target = option
+            else:
+                remaining.append(option)
+        if target is None:
+            raise ValueError("自定义 SQL 配置不存在")
+        profile.custom_sql_options = remaining
+        profile_store.save_profile(profile)
+    except ValueError as exc:
+        _log_failure("delete_custom_sql", str(exc))
+        return _json_error(str(exc), 400)
+
+    logger.info("自定义 SQL 删除成功：环境=%s，SQL文件=%s", profile.name, target["sql_file"])
+    log_operation(
+        "delete_custom_sql",
+        True,
+        环境名称=profile.name,
+        SQL文件=target["sql_file"],
+        日志文件=target["log_file"],
+    )
+    return {
+        "ok": True,
+        "message": "自定义常规 SQL 已删除",
+        "profile_name": profile.name,
+    }
 
 
 @app.post("/config-profiles/active")
@@ -1091,12 +1472,20 @@ def test_connection():
     except Exception as exc:
         logger.exception("环境连接测试失败，SSH 会话建立前发生异常")
         _log_failure("test_connection", str(exc))
-        return JSONResponse({"ok": False, "connected": False, "message": "连接失败: %s" % exc}, status_code=500)
+        return JSONResponse(
+            {"ok": False, "connected": False, "message": "连接失败: %s" % exc},
+            status_code=500,
+        )
 
     try:
         logger.info("环境连接测试成功：%s", _profile_summary(profile))
         log_operation("test_connection", True, 环境名称=profile.name, 远程目录=profile.remote_dir)
-        return {"ok": True, "connected": True, "message": "当前环境连接正常", "profile_name": profile.name}
+        return {
+            "ok": True,
+            "connected": True,
+            "message": "当前环境连接正常",
+            "profile_name": profile.name,
+        }
     finally:
         client.close()
 
@@ -1194,7 +1583,12 @@ def upload_file(files: List[UploadFile] = File(...)):
     try:
         sftp = client.open_sftp()
         try:
-            logger.info("开始上传目录内容：环境=%s，目标目录=%s，待上传文件数=%s", profile.name, profile.remote_dir, len(files))
+            logger.info(
+                "开始上传目录内容：环境=%s，目标目录=%s，待上传文件数=%s",
+                profile.name,
+                profile.remote_dir,
+                len(files),
+            )
             _ensure_remote_dir(sftp, profile.remote_dir)
             for upload in files:
                 raw_name = upload.filename or ""
@@ -1225,7 +1619,13 @@ def upload_file(files: List[UploadFile] = File(...)):
         client.close()
 
     logger.info("目录上传结束：环境=%s，成功上传文件数=%s", profile.name, uploaded)
-    log_operation("upload_dir", True, 环境名称=profile.name, 远程目录=profile.remote_dir, 上传文件数=uploaded)
+    log_operation(
+        "upload_dir",
+        True,
+        环境名称=profile.name,
+        远程目录=profile.remote_dir,
+        上传文件数=uploaded,
+    )
     return {
         "ok": True,
         "message": "已上传 %s 个文件到 %s" % (uploaded, profile.remote_dir),
@@ -1250,7 +1650,11 @@ def clear_remote_dir():
     try:
         sftp = client.open_sftp()
         try:
-            logger.info("开始清空远程目录：环境=%s，目标目录=%s", profile.name, profile.remote_dir)
+            logger.info(
+                "开始清空远程目录：环境=%s，目标目录=%s",
+                profile.name,
+                profile.remote_dir,
+            )
             removed = _clear_remote_dir(sftp, profile.remote_dir)
         finally:
             sftp.close()
@@ -1262,7 +1666,13 @@ def clear_remote_dir():
         client.close()
 
     logger.info("远程目录清空完成：环境=%s，删除条目数=%s", profile.name, removed)
-    log_operation("clear_remote_dir", True, 环境名称=profile.name, 远程目录=profile.remote_dir, 删除条目数=removed)
+    log_operation(
+        "clear_remote_dir",
+        True,
+        环境名称=profile.name,
+        远程目录=profile.remote_dir,
+        删除条目数=removed,
+    )
     return {
         "ok": True,
         "message": "目录已清空，log 目录和历史备份已保留",
@@ -1277,22 +1687,32 @@ def generate_script(options: List[str] = Form(default=[])):
         _log_failure("generate_script", "请至少选择一个选项")
         return _json_error("请至少选择一个选项", 400)
 
-    lines = [
-        "#!/usr/bin/env bash",
-        "set -e",
-        "mkdir -p ./%s ./%s/%s" % (LOG_DIR_NAME, LOG_DIR_NAME, LOG_HISTORY_DIR_NAME),
-    ]
-    selected = set(options)
-    for key in SCRIPT_ORDER:
-        if key in selected:
-            lines.extend(_build_script_block(key))
-    content = "\n".join(lines) + "\n"
-
     try:
         profile = _get_active_profile()
-        client = _connect_ssh(profile)
+        custom_options = _normalize_custom_sql_options(profile.custom_sql_options)
     except ValueError as exc:
         _log_failure("generate_script", str(exc))
+        return _json_error(str(exc), 400)
+
+    custom_options_by_key = {_custom_sql_key(item["id"]): item for item in custom_options}
+    allowed_options = set(SCRIPT_BLOCKS.keys()) | set(custom_options_by_key.keys())
+    unknown_options = sorted(set(options) - allowed_options)
+    if unknown_options:
+        message = "存在无法识别的 SQL 选项: %s" % ", ".join(unknown_options)
+        _log_failure("generate_script", message, profile)
+        return _json_error(message, 400)
+
+    selected = set(options)
+    try:
+        content = _build_script_content(selected, profile, custom_options)
+    except ValueError as exc:
+        logger.warning("生成脚本参数校验失败：环境=%s，原因=%s", profile.name, exc)
+        _log_failure("generate_script", str(exc), profile, 选中项=",".join(sorted(selected)))
+        return _json_error(str(exc), 400)
+    try:
+        client = _connect_ssh(profile)
+    except ValueError as exc:
+        _log_failure("generate_script", str(exc), profile, 选中项=",".join(sorted(selected)))
         return _json_error(str(exc), 400)
     except Exception as exc:
         logger.exception("生成脚本前，建立 SSH 连接失败")
@@ -1304,7 +1724,12 @@ def generate_script(options: List[str] = Form(default=[])):
         try:
             _ensure_remote_dir(sftp, profile.remote_dir)
             remote_path = _remote_path(profile, profile.script_name)
-            logger.info("开始生成脚本：环境=%s，脚本路径=%s，选中项=%s", profile.name, remote_path, ",".join(sorted(selected)))
+            logger.info(
+                "开始生成脚本：环境=%s，脚本路径=%s，选中项=%s",
+                profile.name,
+                remote_path,
+                ",".join(sorted(selected)),
+            )
             _write_remote_file(sftp, remote_path, content.encode("utf-8"))
         finally:
             sftp.close()
@@ -1329,7 +1754,12 @@ def generate_script(options: List[str] = Form(default=[])):
     finally:
         client.close()
 
-    logger.info("脚本生成成功：环境=%s，脚本=%s，选中项=%s", profile.name, remote_path, ",".join(sorted(selected)))
+    logger.info(
+        "脚本生成成功：环境=%s，脚本=%s，选中项=%s",
+        profile.name,
+        remote_path,
+        ",".join(sorted(selected)),
+    )
     log_operation(
         "generate_script",
         True,
@@ -1360,7 +1790,12 @@ def run_script():
             remote_dir=shlex.quote(profile.remote_dir),
             script_name=shlex.quote("./" + profile.script_name),
         )
-        logger.info("准备执行脚本：环境=%s，脚本路径=%s，执行命令=%s", profile.name, remote_path, command)
+        logger.info(
+            "准备执行脚本：环境=%s，脚本路径=%s，执行命令=%s",
+            profile.name,
+            remote_path,
+            command,
+        )
         result = _run_remote_command(client, command)
     except Exception as exc:
         logger.exception("执行脚本失败：%s", _profile_summary(profile))
@@ -1430,7 +1865,13 @@ def list_logs(scope: str = Query("current")):
             try:
                 entries = sftp.listdir_attr(log_dir)
             except FileNotFoundError:
-                log_operation("list_remote_logs", True, 环境名称=profile.name, 日志范围=log_scope, 日志文件数=0)
+                log_operation(
+                    "list_remote_logs",
+                    True,
+                    环境名称=profile.name,
+                    日志范围=log_scope,
+                    日志文件数=0,
+                )
                 return {"ok": True, "scope": log_scope, "log_dir": log_dir, "logs": []}
 
             files = []
@@ -1456,8 +1897,21 @@ def list_logs(scope: str = Query("current")):
                     }
                 )
 
-            logger.info("远程日志读取完成：环境=%s，日志范围=%s，日志目录=%s，日志文件数=%s", profile.name, log_scope, log_dir, len(logs))
-            log_operation("list_remote_logs", True, 环境名称=profile.name, 日志范围=log_scope, 日志目录=log_dir, 日志文件数=len(logs))
+            logger.info(
+                "远程日志读取完成：环境=%s，日志范围=%s，日志目录=%s，日志文件数=%s",
+                profile.name,
+                log_scope,
+                log_dir,
+                len(logs),
+            )
+            log_operation(
+                "list_remote_logs",
+                True,
+                环境名称=profile.name,
+                日志范围=log_scope,
+                日志目录=log_dir,
+                日志文件数=len(logs),
+            )
             return {"ok": True, "scope": log_scope, "log_dir": log_dir, "logs": logs}
         finally:
             sftp.close()
@@ -1494,9 +1948,15 @@ def script_preview():
 
             with sftp.open(script_path, "rb") as script_file:
                 content = _decode_text_bytes(script_file.read())
+            content = _mask_database_password_in_script(content, profile)
 
             modified_at = datetime.fromtimestamp(script_stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-            logger.info("脚本预览读取成功：环境=%s，脚本=%s，更新时间=%s", profile.name, script_path, modified_at)
+            logger.info(
+                "脚本预览读取成功：环境=%s，脚本=%s，更新时间=%s",
+                profile.name,
+                script_path,
+                modified_at,
+            )
             log_operation(
                 "script_preview",
                 True,

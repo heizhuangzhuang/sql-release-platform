@@ -1,0 +1,14 @@
+[tool.ruff]
+target-version = "py38"
+line-length = 120
+extend-exclude = [".venv", "runtime_logs"]
+
+[tool.ruff.lint]
+select = ["E9", "F", "B", "SIM"]
+# FastAPI 使用 Body(...)、File(...)、Form(...) 作为参数默认值是框架标准写法。
+ignore = ["B008"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
