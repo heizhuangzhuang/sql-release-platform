@@ -69,6 +69,10 @@ class FrontendContractTests(unittest.TestCase):
 
         self.assertIn('id="dbPassword" type="password"', content)
         self.assertIn('id="customSqlPassword" type="password"', content)
+        self.assertIn(r"/\bROLLBACK\b/i", content)
+        self.assertIn(r"/\bCOMMIT\b/i", content)
+        self.assertIn('label: "请检查"', content)
+        self.assertIn('className: "warning"', content)
 
     def test_md5_pages_keep_saved_paths_scan_and_sort_contracts(self):
         local_content = read_template("md5_local.html")

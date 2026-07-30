@@ -965,6 +965,11 @@
         color: #991b1b;
       }
 
+      .log-result-badge.warning {
+        background: #fef3c7;
+        color: #92400e;
+      }
+
       .log-content {
         max-height: 220px;
         overflow: auto;
@@ -1846,15 +1851,32 @@
       }
 
       function getLogResult(content) {
-        const lastLine = getLastLogLine(content);
-        const normalized = lastLine.toUpperCase();
-        // 运维判断规则：最后一行等于 COMMENT，并且不是 ROLLBACK，才算成功。
-        const ok = normalized === "COMMENT" && normalized !== "ROLLBACK";
+        const logContent = String(content || "");
+        const lastLine = getLastLogLine(logContent);
+        // SQL 日志可能同时保留多条事务信息；失败关键字优先，匹配不区分大小写。
+        const hasRollback = /\bROLLBACK\b/i.test(logContent);
+        const hasCommit = /\bCOMMIT\b/i.test(logContent);
+        if (hasRollback) {
+          return {
+            ok: false,
+            lastLine,
+            label: "失败",
+            className: "failure"
+          };
+        }
+        if (hasCommit) {
+          return {
+            ok: true,
+            lastLine,
+            label: "成功",
+            className: "success"
+          };
+        }
         return {
-          ok,
+          ok: null,
           lastLine,
-          label: ok ? "成功" : "失败",
-          className: ok ? "success" : "failure"
+          label: "请检查",
+          className: "warning"
         };
       }
 
